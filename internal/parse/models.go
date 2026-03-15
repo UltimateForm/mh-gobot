@@ -7,6 +7,7 @@ type KillfeedEvent struct {
 	UserName       string
 	KilledID       string
 	KilledUserName string
+	IsAssist       bool
 }
 
 type LoginEvent struct {

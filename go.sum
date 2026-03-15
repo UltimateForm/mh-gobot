@@ -2,6 +2,8 @@ github.com/UltimateForm/tcprcon v1.0.0 h1:hPrG0ruUw4RfRw1sqo5GX3PoHIGdi6os/J2agc
 github.com/UltimateForm/tcprcon v1.0.0/go.mod h1:RYrjyiorIt2xTcF+QYT3C5TSTZATcg8mv1uGrOTmwBc=
 github.com/UltimateForm/tcprcon v1.0.1 h1:PgklhwS2BuZQyImQ6WukEDSZWg4SZ/CtaTZVSWpEeUA=
 github.com/UltimateForm/tcprcon v1.0.1/go.mod h1:RYrjyiorIt2xTcF+QYT3C5TSTZATcg8mv1uGrOTmwBc=
+github.com/UltimateForm/tcprcon v1.0.2 h1:oopD2DrwztBI4CTTMXhQFeaSNbJHrs6LeTaJiNfmhVk=
+github.com/UltimateForm/tcprcon v1.0.2/go.mod h1:RYrjyiorIt2xTcF+QYT3C5TSTZATcg8mv1uGrOTmwBc=
 github.com/bwmarrin/discordgo v0.29.0 h1:FmWeXFaKUwrcL3Cx65c20bTRW+vOb6k8AnaP+EgjDno=
 github.com/bwmarrin/discordgo v0.29.0/go.mod h1:NJZpH+1AfhIcyQsPeuBKsUtYrRnjkyu0kIVMCHkZtRY=
 github.com/gorilla/websocket v1.4.2 h1:+/TMaTYc4QFitKJxsQ7Yye35DkWvkdLcvGKqM+x0Ufc=

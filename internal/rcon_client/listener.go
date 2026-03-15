@@ -25,9 +25,13 @@ const (
 
 const listenerChannelBuffer = 32
 const keepaliveIntervalSecs = 100
+const reconnectDelaySecs = 5
 
 type ListenerClient struct {
-	*ControlledClient
+	client                *ControlledClient
+	uri                   string
+	password              string
+	listenTypes           []ListenType
 	KillfeedEvents        <-chan *parse.KillfeedEvent
 	LoginEvents           <-chan *parse.LoginEvent
 	ChatEvents            <-chan *parse.ChatEvent
@@ -57,7 +61,10 @@ func NewListener(uri, password string, listenTypes []ListenType) (*ListenerClien
 	}
 
 	l := &ListenerClient{
-		ControlledClient:  base,
+		client:            base,
+		uri:               uri,
+		password:          password,
+		listenTypes:       listenTypes,
 		killfeedCh:        make(chan *parse.KillfeedEvent, listenerChannelBuffer),
 		loginCh:           make(chan *parse.LoginEvent, listenerChannelBuffer),
 		chatCh:            make(chan *parse.ChatEvent, listenerChannelBuffer),
@@ -86,6 +93,28 @@ func NewListener(uri, password string, listenTypes []ListenType) (*ListenerClien
 	}
 
 	return l, nil
+}
+
+func (l *ListenerClient) reconnect() error {
+	l.client.Close()
+	base, err := New(l.uri)
+	if err != nil {
+		return err
+	}
+	success, err := base.Authenticate(l.password)
+	if err != nil {
+		return err
+	}
+	if !success {
+		return errors.New("authentication failed")
+	}
+	for _, t := range l.listenTypes {
+		if _, err := base.Execute("listen " + string(t)); err != nil {
+			return errors.Join(errors.New("failed to re-register listener "+string(t)), err)
+		}
+	}
+	l.client = base
+	return nil
 }
 
 func (l *ListenerClient) route(body string) {
@@ -159,20 +188,42 @@ func (l *ListenerClient) route(body string) {
 }
 
 func (l *ListenerClient) stream(ctx context.Context) {
-	packets := packet.CreateResponseChannel(l.ControlledClient.Client, ctx)
-	for pkt := range packets {
-		if pkt.Error != nil {
-			if netErr, ok := pkt.Error.(net.Error); ok && netErr.Timeout() {
+	for {
+		connCtx, cancelConn := context.WithCancel(ctx)
+		go l.keepalive(connCtx)
+
+		packets := packet.CreateResponseChannel(l.client, connCtx)
+		for pkt := range packets {
+			if pkt.Error != nil {
+				if netErr, ok := pkt.Error.(net.Error); ok && netErr.Timeout() {
+					continue
+				}
+				l.logger.Printf("stream error: %v", pkt.Error)
+				break
+			}
+			body := pkt.BodyStr()
+			if strings.HasPrefix(body, "Keeping client alive") {
 				continue
 			}
-			l.logger.Printf("stream error: %v", pkt.Error)
-			continue
+			l.route(body)
 		}
-		body := pkt.BodyStr()
-		if strings.HasPrefix(body, "Keeping client alive") {
-			continue
+
+		cancelConn()
+
+		if ctx.Err() != nil {
+			return
 		}
-		l.route(body)
+
+		l.logger.Println("connection lost, reconnecting...")
+		for {
+			time.Sleep(reconnectDelaySecs * time.Second)
+			if err := l.reconnect(); err != nil {
+				l.logger.Printf("reconnect failed: %v, retrying...", err)
+				continue
+			}
+			l.logger.Println("reconnected successfully")
+			break
+		}
 	}
 }
 
@@ -184,11 +235,11 @@ func (l *ListenerClient) keepalive(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			l.mu.Lock()
-			id := l.Id()
+			l.client.mu.Lock()
+			id := l.client.Id()
 			pkt := packet.New(id, packet.SERVERDATA_EXECCOMMAND, []byte("alive"))
-			_, err := l.Write(pkt.Serialize())
-			l.mu.Unlock()
+			_, err := l.client.Write(pkt.Serialize())
+			l.client.mu.Unlock()
 			if err != nil {
 				l.logger.Printf("keepalive write error: %v", err)
 			}
@@ -198,5 +249,4 @@ func (l *ListenerClient) keepalive(ctx context.Context) {
 
 func (l *ListenerClient) Run(ctx context.Context) {
 	go l.stream(ctx)
-	go l.keepalive(ctx)
 }

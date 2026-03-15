@@ -19,8 +19,12 @@ func sendEvent(dc *discordgo.Session, embed *discordgo.MessageEmbed) {
 }
 
 func killfeedEmbed(e *parse.KillfeedEvent) *discordgo.MessageEmbed {
+	title := "💀 Kill"
+	if e.IsAssist {
+		title = "🤝 Assist Kill"
+	}
 	return &discordgo.MessageEmbed{
-		Title: "💀 Kill",
+		Title: title,
 		Color: 0xE74C3C,
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "Killer", Value: fmt.Sprintf("%s `%s`", e.UserName, e.KillerID), Inline: true},

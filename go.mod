@@ -3,7 +3,7 @@ module github.com/UltimateForm/ryard
 go 1.25.3
 
 require (
-	github.com/UltimateForm/tcprcon v1.0.1
+	github.com/UltimateForm/tcprcon v1.0.2
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/joho/godotenv v1.5.1
 	github.com/vjeantet/grok v1.0.1

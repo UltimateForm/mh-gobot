@@ -10,14 +10,16 @@ import (
 )
 
 var reScorefeedTeam = regexp.MustCompile(`^Scorefeed: \d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}: Team`)
+var reKillfeedAssist = regexp.MustCompile(`^Killfeed: \d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}: \S+ \(.+\) got an assist`)
 
 const (
-	GrokKillfeedEvent = `%{WORD:event_type}: %{NOTSPACE:date}: (?:%{NOTSPACE:killer_id})? \(%{GREEDYDATA:user_name}\) killed (?:%{NOTSPACE:killed_id})? \(%{GREEDYDATA:killed_user_name}\)`
-	GrokLoginEvent    = `%{WORD:event_type}: %{NOTSPACE:date}: %{GREEDYDATA:user_name} \(%{WORD:player_id}\) logged %{WORD:instance}`
-	DateFormat        = "2006.01.02-15.04.05"
-	GrokChatEvent     = `%{WORD:event_type}: %{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, \(%{WORD:channel}\) %{GREEDYDATA:message}`
-	GrokServerInfo    = `HostName: %{GREEDYDATA:host}\nServerName: %{GREEDYDATA:server_name}\nVersion: %{GREEDYDATA:version}\nGameMode: %{GREEDYDATA:game_mode}\nMap: %{GREEDYDATA:map}`
-	GrokPlayerlistRow = `%{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, %{GREEDYDATA}, %{GREEDYDATA}`
+	GrokKillfeedEvent   = `%{WORD:event_type}: %{NOTSPACE:date}: (?:%{NOTSPACE:killer_id})? \(%{GREEDYDATA:user_name}\) killed (?:%{NOTSPACE:killed_id})? \(%{GREEDYDATA:killed_user_name}\)`
+	GrokKillfeedAssist  = `%{WORD:event_type}: %{NOTSPACE:date}: %{NOTSPACE:killer_id} \(%{DATA:user_name}\) got an assist kill for the death of %{NOTSPACE:killed_id} \(%{DATA:killed_user_name}\)`
+	GrokLoginEvent      = `%{WORD:event_type}: %{NOTSPACE:date}: %{GREEDYDATA:user_name} \(%{WORD:player_id}\) logged %{WORD:instance}`
+	DateFormat          = "2006.01.02-15.04.05"
+	GrokChatEvent       = `%{WORD:event_type}: %{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, \(%{WORD:channel}\) %{GREEDYDATA:message}`
+	GrokServerInfo      = `HostName: %{GREEDYDATA:host}\nServerName: %{GREEDYDATA:server_name}\nVersion: %{GREEDYDATA:version}\nGameMode: %{GREEDYDATA:game_mode}\nMap: %{GREEDYDATA:map}`
+	GrokPlayerlistRow   = `%{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, %{GREEDYDATA}, %{GREEDYDATA}`
 	GrokMatchstate      = `MatchState: %{GREEDYDATA:state}`
 	GrokScoreboardRow   = `%{NOTSPACE:player_id}, %{DATA:user_name}, %{NUMBER}, %{NUMBER}, %{NUMBER:score}, %{NUMBER:kills}, %{NUMBER:deaths}, %{NUMBER}`
 	GrokScorefeedPlayer = `Scorefeed: %{NOTSPACE:date}: %{NOTSPACE:player_id} \(%{DATA:user_name}\)'s score changed by %{NUMBER:score_change} points and is now %{NUMBER:new_score} points`
@@ -46,7 +48,12 @@ func parseEvent(event, pattern string) (map[string]string, error) {
 }
 
 func ParseKillfeedEvent(event string) (*KillfeedEvent, error) {
-	values, err := parseEvent(event, GrokKillfeedEvent)
+	isAssist := reKillfeedAssist.MatchString(event)
+	pattern := GrokKillfeedEvent
+	if isAssist {
+		pattern = GrokKillfeedAssist
+	}
+	values, err := parseEvent(event, pattern)
 	if err != nil || values == nil {
 		return nil, err
 	}
@@ -57,6 +64,7 @@ func ParseKillfeedEvent(event string) (*KillfeedEvent, error) {
 		UserName:       values["user_name"],
 		KilledID:       values["killed_id"],
 		KilledUserName: values["killed_user_name"],
+		IsAssist:       isAssist,
 	}, nil
 }
 
