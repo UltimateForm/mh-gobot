@@ -26,7 +26,7 @@ func NewPersistentEmbed(renderFunc func(time.Time) (*discordgo.MessageEmbed, err
 		channels: channels,
 		logger: log.New(
 			log.Default().Writer(),
-			fmt.Sprintf("[PersistentEmbed:%v]", name),
+			fmt.Sprintf("[PersistentEmbed:%v] ", name),
 			log.Default().Flags(),
 		),
 	}

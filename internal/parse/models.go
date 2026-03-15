@@ -40,3 +40,18 @@ type ScoreboardEntry struct {
 	Kills    int
 	Deaths   int
 }
+
+type ScorefeedPlayerEvent struct {
+	Date        string
+	PlayerID    string
+	UserName    string
+	ScoreChange float64
+	NewScore    float64
+}
+
+type ScorefeedTeamEvent struct {
+	Date     string
+	TeamID   int
+	NewScore float64
+	OldScore float64
+}

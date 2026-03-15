@@ -1,12 +1,15 @@
 package parse
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vjeantet/grok"
 )
+
+var reScorefeedTeam = regexp.MustCompile(`^Scorefeed: \d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}: Team`)
 
 const (
 	GrokKillfeedEvent = `%{WORD:event_type}: %{NOTSPACE:date}: (?:%{NOTSPACE:killer_id})? \(%{GREEDYDATA:user_name}\) killed (?:%{NOTSPACE:killed_id})? \(%{GREEDYDATA:killed_user_name}\)`
@@ -15,8 +18,10 @@ const (
 	GrokChatEvent     = `%{WORD:event_type}: %{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, \(%{WORD:channel}\) %{GREEDYDATA:message}`
 	GrokServerInfo    = `HostName: %{GREEDYDATA:host}\nServerName: %{GREEDYDATA:server_name}\nVersion: %{GREEDYDATA:version}\nGameMode: %{GREEDYDATA:game_mode}\nMap: %{GREEDYDATA:map}`
 	GrokPlayerlistRow = `%{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, %{GREEDYDATA}, %{GREEDYDATA}`
-	GrokMatchstate    = `MatchState: %{GREEDYDATA:state}`
-	GrokScoreboardRow = `%{NOTSPACE:player_id}, %{DATA:user_name}, %{NUMBER}, %{NUMBER}, %{NUMBER:score}, %{NUMBER:kills}, %{NUMBER:deaths}, %{NUMBER}`
+	GrokMatchstate      = `MatchState: %{GREEDYDATA:state}`
+	GrokScoreboardRow   = `%{NOTSPACE:player_id}, %{DATA:user_name}, %{NUMBER}, %{NUMBER}, %{NUMBER:score}, %{NUMBER:kills}, %{NUMBER:deaths}, %{NUMBER}`
+	GrokScorefeedPlayer = `Scorefeed: %{NOTSPACE:date}: %{NOTSPACE:player_id} \(%{DATA:user_name}\)'s score changed by %{NUMBER:score_change} points and is now %{NUMBER:new_score} points`
+	GrokScorefeedTeam   = `Scorefeed: %{NOTSPACE:date}: Team %{NUMBER:team_id}'s is now %{NUMBER:new_score} points from %{NUMBER:old_score} points`
 )
 
 var g *grok.Grok
@@ -132,6 +137,47 @@ func ParseScoreboard(raw string) ([]*ScoreboardEntry, error) {
 		}
 	}
 	return entries, nil
+}
+
+func ParseScorefeedPlayerEvent(raw string) (*ScorefeedPlayerEvent, error) {
+	values, err := parseEvent(raw, GrokScorefeedPlayer)
+	if err != nil || values == nil {
+		return nil, err
+	}
+	scoreChange, _ := strconv.ParseFloat(values["score_change"], 64)
+	newScore, _ := strconv.ParseFloat(values["new_score"], 64)
+	return &ScorefeedPlayerEvent{
+		Date:        values["date"],
+		PlayerID:    values["player_id"],
+		UserName:    values["user_name"],
+		ScoreChange: scoreChange,
+		NewScore:    newScore,
+	}, nil
+}
+
+func ParseScorefeedTeamEvent(raw string) (*ScorefeedTeamEvent, error) {
+	values, err := parseEvent(raw, GrokScorefeedTeam)
+	if err != nil || values == nil {
+		return nil, err
+	}
+	teamID, _ := strconv.Atoi(values["team_id"])
+	newScore, _ := strconv.ParseFloat(values["new_score"], 64)
+	oldScore, _ := strconv.ParseFloat(values["old_score"], 64)
+	return &ScorefeedTeamEvent{
+		Date:     values["date"],
+		TeamID:   teamID,
+		NewScore: newScore,
+		OldScore: oldScore,
+	}, nil
+}
+
+func ParseScorefeedEvent(raw string) (*ScorefeedPlayerEvent, *ScorefeedTeamEvent, error) {
+	if reScorefeedTeam.MatchString(raw) {
+		event, err := ParseScorefeedTeamEvent(raw)
+		return nil, event, err
+	}
+	event, err := ParseScorefeedPlayerEvent(raw)
+	return event, nil, err
 }
 
 func ParseMatchstate(raw string) (string, error) {

@@ -43,31 +43,26 @@ func Start() {
 		},
 	)
 
+	rconlistener, err := rcon_client.NewListener(
+		config.Global.RconUri,
+		config.Global.RconPassword,
+		[]rcon_client.ListenType{
+			rcon_client.ListenChat,
+			rcon_client.ListenKillfeed,
+			rcon_client.ListenScorefeed,
+			rcon_client.ListenMatchstate,
+		},
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// Register ready handler to register commands
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
-
-		// Register the rconx command (admin only)
-		cmd := &discordgo.ApplicationCommand{
-			Name:                     "rconx",
-			Description:              "Execute an RCON command",
-			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Type:        discordgo.ApplicationCommandOptionString,
-					Name:        "command",
-					Description: "The RCON command to execute",
-					Required:    true,
-				},
-			},
-		}
-
-		_, err := s.ApplicationCommandCreate(s.State.User.ID, "", cmd)
-		if err != nil {
-			log.Printf("Cannot create slash command: %v", err)
-		} else {
-			log.Println("Slash command 'rconx' registered successfully")
-		}
+		go rconlistener.Run(appCtx)
+		go handleEvents(appCtx, s, rconlistener)
+		registerCommands(s)
 		persistentPopWatch.Run(appCtx, dg)
 	})
 
@@ -85,82 +80,6 @@ func Start() {
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 	stopApp()
-}
-
-func handleRconxCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	options := i.ApplicationCommandData().Options
-	var cmdString string
-	for _, opt := range options {
-		if opt.Name == "command" {
-			cmdString = opt.StringValue()
-			break
-		}
-	}
-
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-	})
-	if err != nil {
-		log.Printf("Error deferring interaction: %v", err)
-		return
-	}
-
-	result, err := executeRconCommand(cmdString)
-
-	var embed *discordgo.MessageEmbed
-	if err != nil {
-		embed = &discordgo.MessageEmbed{
-			Title:       "RCON Error ❌",
-			Description: fmt.Sprintf("Failed to execute command: `%s`", cmdString),
-			Color:       0xff0000,
-			Fields: []*discordgo.MessageEmbedField{
-				{
-					Name:  "Error",
-					Value: util.TruncateCodeString(fmt.Sprintf("```\n%v\n```", err), 1024),
-				},
-			},
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
-	} else {
-		outputValue := result
-		if outputValue == "" {
-			outputValue = "(no output)"
-		}
-		embed = &discordgo.MessageEmbed{
-			Title:       "RCON Response ✅",
-			Description: fmt.Sprintf("Command: `%s`", cmdString),
-			Color:       0x00ff00,
-			Fields: []*discordgo.MessageEmbedField{
-				{
-					Name:  "Output",
-					Value: util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", outputValue), 1024),
-				},
-			},
-			Timestamp: time.Now().Format(time.RFC3339),
-		}
-	}
-
-	_, err = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Embeds: &[]*discordgo.MessageEmbed{embed},
-	})
-	if err != nil {
-		log.Printf("Error editing interaction response: %v", err)
-	}
-}
-
-func executeRconCommand(cmd string) (string, error) {
-	client, err := rcon_client.New(config.Global.RconUri)
-	if err != nil {
-		return "", err
-	}
-	success, err := client.Authenticate(config.Global.RconPassword)
-	if err != nil {
-		return "", errors.Join(errors.New("authentication error"), err)
-	}
-	if !success {
-		return "", errors.New("authentication failed")
-	}
-	return client.Execute(cmd)
 }
 
 func renderPopEmbed(t time.Time) (*discordgo.MessageEmbed, error) {
@@ -206,6 +125,8 @@ func renderPopEmbed(t time.Time) (*discordgo.MessageEmbed, error) {
 			tw.AppendRow(table.Row{i + 1, e.UserName, e.Score, e.Kills, e.Deaths})
 		}
 		tw.SetStyle(table.StyleLight)
+		tw.Style().Options.DrawBorder = false
+		tw.Style().Options.SeparateRows = false
 		tableValue = util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024)
 	}
 
@@ -230,7 +151,7 @@ func renderPopEmbed(t time.Time) (*discordgo.MessageEmbed, error) {
 				Inline: true,
 			},
 			{
-				Name:  fmt.Sprintf("👥 Players (%d)", len(entries)),
+				Name:  fmt.Sprintf("👥 Players Online (%d)", len(entries)),
 				Value: tableValue,
 			},
 		},

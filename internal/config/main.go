@@ -10,8 +10,9 @@ import (
 )
 
 type dcConfig struct {
-	DcToken    string
-	PopChannel string
+	DcToken       string
+	PopChannel    string
+	EventsChannel string
 }
 
 type rconConfig struct {
@@ -32,6 +33,9 @@ func (src *botConfig) Validate() {
 	if src.PopChannel == "" {
 		log.Fatal("missing pop channel")
 	}
+	if src.EventsChannel == "" {
+		log.Fatal("missing events channel")
+	}
 	if src.RconUri == "" {
 		log.Fatal("missing rcon uri")
 	}
@@ -49,8 +53,9 @@ func init() {
 	}
 	Global = botConfig{
 		dcConfig: dcConfig{
-			DcToken:    os.Getenv("DC_TOKEN"),
-			PopChannel: os.Getenv("POP_CHANNEL"),
+			DcToken:       os.Getenv("DC_TOKEN"),
+			PopChannel:    os.Getenv("POP_CHANNEL"),
+			EventsChannel: os.Getenv("EVENTS_CHANNEL"),
 		},
 		rconConfig: rconConfig{
 			RconUri:      fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),
