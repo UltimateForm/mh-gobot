@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/UltimateForm/ryard/internal/config"
+	_ "github.com/UltimateForm/ryard/internal/data"
 	"github.com/UltimateForm/ryard/internal/discord"
 	"github.com/UltimateForm/ryard/internal/parse"
 	"github.com/UltimateForm/ryard/internal/rcon_client"
@@ -37,7 +38,7 @@ func Start() {
 	persistentPopWatch := discord.NewPersistentEmbed(
 		renderPopEmbed,
 		"playerlist",
-		time.Second*10,
+		time.Second*30,
 		map[string]string{
 			config.Global.PopChannel: "",
 		},
