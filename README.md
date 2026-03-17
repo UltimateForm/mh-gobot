@@ -9,7 +9,8 @@ A Discord bot that bridges Discord and game servers via RCON. Listens to live ga
 - Live game event streaming over RCON (killfeed, scorefeed, chat, matchstate)
 - Player stat tracking (kills, deaths, assists, score) via SQLite
 - Auto-recovery on RCON connection loss
-- Recurring server status embed in Discord
+- Persistent leaderboard and server status embeds in Discord
+- Slash commands: `/score`, `/place`, `/top`, `/rconx`
 
 ## Requirements
 
@@ -21,14 +22,15 @@ A Discord bot that bridges Discord and game servers via RCON. Listens to live ga
 
 Copy `.env.example` to `.env` and fill in the values:
 
-```env
-DC_TOKEN=
-RCON_ADDRESS=
-RCON_PORT=
-RCON_PASSWORD=
-POP_CHANNEL=
-EVENTS_CHANNEL=
-```
+| Variable | Required | Description |
+|---|---|---|
+| `DC_TOKEN` | yes | Discord bot token |
+| `RCON_ADDRESS` | yes | Game server RCON host |
+| `RCON_PORT` | yes | Game server RCON port |
+| `RCON_PASSWORD` | yes | Game server RCON password |
+| `POP_CHANNEL` | no | Channel ID for the server population embed |
+| `EVENTS_CHANNEL` | no | Channel ID for live game event messages |
+| `LEADERBOARDS_CHANNEL` | no | Channel ID for the persistent leaderboard embed |
 
 ## Usage
 
