@@ -2,16 +2,19 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
+	"github.com/UltimateForm/ryard/internal/data"
 	"github.com/bwmarrin/discordgo"
 )
 
 // TODO: expand to support normal messages too, no reason to bind this forever to just embeds
 
 type PersistentEmbed struct {
+	name     string
 	render   func(time.Time) (*discordgo.MessageEmbed, error)
 	interval time.Duration
 	channels map[string]string
@@ -21,6 +24,7 @@ type PersistentEmbed struct {
 // channels is a map of channels and id for existing embed ids, if existing embed does not exist just pass empty id
 func NewPersistentEmbed(renderFunc func(time.Time) (*discordgo.MessageEmbed, error), name string, interval time.Duration, channels map[string]string) *PersistentEmbed {
 	return &PersistentEmbed{
+		name:     name,
 		render:   renderFunc,
 		interval: interval,
 		channels: channels,
@@ -32,7 +36,11 @@ func NewPersistentEmbed(renderFunc func(time.Time) (*discordgo.MessageEmbed, err
 	}
 }
 
-func (src *PersistentEmbed) tick(dc *discordgo.Session, t time.Time) {
+func metaKey(name, channelID string) string {
+	return fmt.Sprintf("persistent_embed:%s:%s", name, channelID)
+}
+
+func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t time.Time) {
 	embed, err := src.render(t)
 	if err != nil {
 		src.logger.Printf("failed to render: %v", err)
@@ -45,12 +53,24 @@ func (src *PersistentEmbed) tick(dc *discordgo.Session, t time.Time) {
 				src.logger.Printf("failed to edit message: %v", err)
 			}
 		} else {
+			storedID, err := data.GetMeta(ctx, metaKey(src.name, k))
+			if err != nil && !errors.Is(err, data.DbMetaNotFound) {
+				src.logger.Printf("failed to read meta: %v", err)
+			}
+			if storedID != "" {
+				if err := dc.ChannelMessageDelete(k, storedID); err != nil {
+					src.logger.Printf("failed to delete old message: %v", err)
+				}
+			}
 			msg, err := dc.ChannelMessageSendEmbed(k, embed)
 			if err != nil {
 				src.logger.Printf("failed to send message: %v", err)
 				continue
 			}
 			src.channels[k] = msg.ID
+			if err := data.SetMeta(ctx, metaKey(src.name, k), msg.ID); err != nil {
+				src.logger.Printf("failed to store meta: %v", err)
+			}
 		}
 	}
 }
@@ -58,11 +78,11 @@ func (src *PersistentEmbed) tick(dc *discordgo.Session, t time.Time) {
 func (src *PersistentEmbed) routine(ctx context.Context, dc *discordgo.Session) {
 	ticker := time.NewTicker(src.interval)
 	defer ticker.Stop()
-	src.tick(dc, time.Now())
+	src.tick(ctx, dc, time.Now())
 	for {
 		select {
 		case t := <-ticker.C:
-			src.tick(dc, t)
+			src.tick(ctx, dc, t)
 		case <-ctx.Done():
 			src.logger.Println("exiting due to context done")
 			return

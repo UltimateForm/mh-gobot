@@ -21,7 +21,7 @@ const (
 	GrokServerInfo      = `HostName: %{GREEDYDATA:host}\nServerName: %{GREEDYDATA:server_name}\nVersion: %{GREEDYDATA:version}\nGameMode: %{GREEDYDATA:game_mode}\nMap: %{GREEDYDATA:map}`
 	GrokPlayerlistRow   = `%{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, %{GREEDYDATA}, %{GREEDYDATA}`
 	GrokMatchstate      = `MatchState: %{GREEDYDATA:state}`
-	GrokScoreboardRow   = `%{NOTSPACE:player_id}, %{DATA:user_name}, %{NUMBER}, %{NUMBER}, %{NUMBER:score}, %{NUMBER:kills}, %{NUMBER:deaths}, %{NUMBER}`
+	GrokScoreboardRow   = `%{NOTSPACE:player_id}, %{DATA:user_name}, %{NUMBER}, %{NUMBER}, %{NUMBER:score}, %{NUMBER:kills}, %{NUMBER:deaths}, %{NUMBER:assists}`
 	GrokScorefeedPlayer = `Scorefeed: %{NOTSPACE:date}: %{NOTSPACE:player_id} \(%{DATA:user_name}\)'s score changed by %{NUMBER:score_change} points and is now %{NUMBER:new_score} points`
 	GrokScorefeedTeam   = `Scorefeed: %{NOTSPACE:date}: Team %{NUMBER:team_id}'s is now %{NUMBER:new_score} points from %{NUMBER:old_score} points`
 )
@@ -123,12 +123,14 @@ func ParseScoreboardRow(raw string) (*ScoreboardEntry, error) {
 	score, _ := strconv.Atoi(values["score"])
 	kills, _ := strconv.Atoi(values["kills"])
 	deaths, _ := strconv.Atoi(values["deaths"])
+	assists, _ := strconv.Atoi(values["assists"])
 	return &ScoreboardEntry{
 		PlayerID: values["player_id"],
 		UserName: values["user_name"],
 		Score:    score,
 		Kills:    kills,
 		Deaths:   deaths,
+		Assists:  assists,
 	}, nil
 }
 

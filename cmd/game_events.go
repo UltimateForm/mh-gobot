@@ -13,6 +13,9 @@ import (
 )
 
 func logEvent(dc *discordgo.Session, msg string) {
+	if config.Global.EventsChannel == "" {
+		return
+	}
 	_, err := dc.ChannelMessageSend(config.Global.EventsChannel, msg)
 	if err != nil {
 		log.Printf("failed to send event: %v", err)

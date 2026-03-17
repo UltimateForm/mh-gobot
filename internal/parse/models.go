@@ -40,6 +40,7 @@ type ScoreboardEntry struct {
 	Score    int
 	Kills    int
 	Deaths   int
+	Assists  int
 }
 
 type ScorefeedPlayerEvent struct {

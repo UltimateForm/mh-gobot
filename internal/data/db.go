@@ -48,5 +48,12 @@ func init() {
 	if err != nil {
 		logger.Fatal(err)
 	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS meta (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	)`)
+	if err != nil {
+		logger.Fatal(err)
+	}
 
 }

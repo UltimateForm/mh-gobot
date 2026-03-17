@@ -10,9 +10,10 @@ import (
 )
 
 type dcConfig struct {
-	DcToken       string
-	PopChannel    string
-	EventsChannel string
+	DcToken             string
+	PopChannel          string
+	EventsChannel       string
+	LeaderboardsChannel string
 }
 
 type rconConfig struct {
@@ -31,10 +32,13 @@ func (src *botConfig) Validate() {
 		log.Fatal("missing dc token")
 	}
 	if src.PopChannel == "" {
-		log.Fatal("missing pop channel")
+		log.Println("warning: missing pop channel, pop embed will be disabled")
 	}
 	if src.EventsChannel == "" {
-		log.Fatal("missing events channel")
+		log.Println("warning: missing events channel, event messages will be disabled")
+	}
+	if src.LeaderboardsChannel == "" {
+		log.Println("warning: missing leaderboards channel, leaderboard embed will be disabled")
 	}
 	if src.RconUri == "" {
 		log.Fatal("missing rcon uri")
@@ -48,14 +52,15 @@ var Global botConfig
 
 func init() {
 	log.Println("loading config from env...")
-	if err := godotenv.Load(); err != nil {
+	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Fatal(errors.Join(errors.New("failed to load bot config"), err))
 	}
 	Global = botConfig{
 		dcConfig: dcConfig{
 			DcToken:       os.Getenv("DC_TOKEN"),
 			PopChannel:    os.Getenv("POP_CHANNEL"),
-			EventsChannel: os.Getenv("EVENTS_CHANNEL"),
+			EventsChannel:       os.Getenv("EVENTS_CHANNEL"),
+			LeaderboardsChannel: os.Getenv("LEADERBOARDS_CHANNEL"),
 		},
 		rconConfig: rconConfig{
 			RconUri:      fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),

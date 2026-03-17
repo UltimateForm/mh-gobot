@@ -109,9 +109,11 @@ func (l *ListenerClient) reconnect() error {
 		return errors.New("authentication failed")
 	}
 	for _, t := range l.listenTypes {
-		if _, err := base.Execute("listen " + string(t)); err != nil {
+		resp, err := base.Execute("listen " + string(t))
+		if err != nil {
 			return errors.Join(errors.New("failed to re-register listener "+string(t)), err)
 		}
+		l.logger.Printf("re-registered listen %s: %s", t, resp)
 	}
 	l.client = base
 	return nil

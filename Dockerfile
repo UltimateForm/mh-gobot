@@ -8,6 +8,5 @@ RUN go build -o .out/ryard .
 FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/.out/ryard .
-COPY .env* ./
 RUN mkdir -p /root/.ryard
 CMD ["./ryard"]
