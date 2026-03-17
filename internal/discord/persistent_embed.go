@@ -32,33 +32,37 @@ func NewPersistentEmbed(renderFunc func(time.Time) (*discordgo.MessageEmbed, err
 	}
 }
 
+func (src *PersistentEmbed) tick(dc *discordgo.Session, t time.Time) {
+	embed, err := src.render(t)
+	if err != nil {
+		src.logger.Printf("failed to render: %v", err)
+		return
+	}
+	for k, v := range src.channels {
+		if v != "" {
+			_, err := dc.ChannelMessageEditEmbed(k, v, embed)
+			if err != nil {
+				src.logger.Printf("failed to edit message: %v", err)
+			}
+		} else {
+			msg, err := dc.ChannelMessageSendEmbed(k, embed)
+			if err != nil {
+				src.logger.Printf("failed to send message: %v", err)
+				continue
+			}
+			src.channels[k] = msg.ID
+		}
+	}
+}
+
 func (src *PersistentEmbed) routine(ctx context.Context, dc *discordgo.Session) {
 	ticker := time.NewTicker(src.interval)
 	defer ticker.Stop()
+	src.tick(dc, time.Now())
 	for {
 		select {
 		case t := <-ticker.C:
-			src.logger.Println("rendering...")
-			embed, err := src.render(t)
-			if err != nil {
-				src.logger.Printf("failed to render: %v", err)
-				continue
-			}
-			for k, v := range src.channels {
-				if v != "" {
-					_, err := dc.ChannelMessageEditEmbed(k, v, embed)
-					if err != nil {
-						src.logger.Printf("failed to edit message: %v", err)
-					}
-				} else {
-					msg, err := dc.ChannelMessageSendEmbed(k, embed)
-					if err != nil {
-						src.logger.Printf("failed to send message: %v", err)
-						continue
-					}
-					src.channels[k] = msg.ID
-				}
-			}
+			src.tick(dc, t)
 		case <-ctx.Done():
 			src.logger.Println("exiting due to context done")
 			return
