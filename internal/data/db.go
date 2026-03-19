@@ -18,10 +18,11 @@ func init() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	dbFolder := filepath.Join(home, ".ryard")
+	dbFolder := filepath.Join(home, ".mh-gobot")
 	if err := os.MkdirAll(dbFolder, 0700); err != nil {
 		logger.Fatal(err)
 	}
+	logger.Printf("loading db from folder %v", dbFolder)
 	dbPath := filepath.Join(dbFolder, "data.db")
 	db, err = sql.Open("sqlite", dbPath)
 	if err != nil {
