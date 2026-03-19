@@ -1,4 +1,4 @@
-# ryard
+# mh-gobot
 
 > ⚠️ **This project is currently in active development**
 
@@ -52,4 +52,4 @@ make docker-kill-detached
 
 ## Data
 
-Player stats are stored in `~/.ryard/data.db` (SQLite). The database is created automatically on first run.
+Player stats are stored in `~/.mh-gobot/data.db` (SQLite). The database is created automatically on first run.

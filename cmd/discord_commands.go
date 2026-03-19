@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/UltimateForm/ryard/internal/config"
-	"github.com/UltimateForm/ryard/internal/data"
-	"github.com/UltimateForm/ryard/internal/discord"
-	"github.com/UltimateForm/ryard/internal/rcon_client"
-	"github.com/UltimateForm/ryard/internal/util"
+	"github.com/UltimateForm/mh-gobot/internal/config"
+	"github.com/UltimateForm/mh-gobot/internal/data"
+	"github.com/UltimateForm/mh-gobot/internal/discord"
+	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
+	"github.com/UltimateForm/mh-gobot/internal/util"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jedib0t/go-pretty/v6/table"
 )

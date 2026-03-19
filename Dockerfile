@@ -3,10 +3,10 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -o .out/ryard .
+RUN go build -o .out/mh-gobot .
 
 FROM alpine:latest
 WORKDIR /app
-COPY --from=builder /app/.out/ryard .
-RUN mkdir -p /root/.ryard
-CMD ["./ryard"]
+COPY --from=builder /app/.out/mh-gobot .
+RUN mkdir -p /root/.mh-gobot
+CMD ["./mh-gobot"]

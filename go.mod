@@ -1,4 +1,4 @@
-module github.com/UltimateForm/ryard
+module github.com/UltimateForm/mh-gobot
 
 go 1.25.3
 

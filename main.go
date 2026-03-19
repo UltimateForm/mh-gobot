@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/UltimateForm/ryard/cmd"
+	"github.com/UltimateForm/mh-gobot/cmd"
 )
 
 func main() {

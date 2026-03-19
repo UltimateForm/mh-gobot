@@ -1,6 +1,6 @@
 package parse
 
-import "github.com/UltimateForm/ryard/internal/data"
+import "github.com/UltimateForm/mh-gobot/internal/data"
 
 func MapPlayerScore(e ScorefeedPlayerEvent) data.Player {
 	return data.Player{

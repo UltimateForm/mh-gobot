@@ -8,7 +8,7 @@ import (
 	"io"
 	"slices"
 
-	"github.com/UltimateForm/ryard/internal/parse"
+	"github.com/UltimateForm/mh-gobot/internal/parse"
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
 )

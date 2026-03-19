@@ -3,7 +3,7 @@ package discord
 import (
 	"errors"
 
-	"github.com/UltimateForm/ryard/internal/config"
+	"github.com/UltimateForm/mh-gobot/internal/config"
 	"github.com/bwmarrin/discordgo"
 )
 

@@ -8,7 +8,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/UltimateForm/ryard/internal/data"
+	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/bwmarrin/discordgo"
 )
 

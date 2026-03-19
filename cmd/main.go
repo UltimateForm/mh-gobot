@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/UltimateForm/ryard/internal/config"
-	"github.com/UltimateForm/ryard/internal/data"
-	"github.com/UltimateForm/ryard/internal/discord"
-	"github.com/UltimateForm/ryard/internal/img"
-	"github.com/UltimateForm/ryard/internal/parse"
-	"github.com/UltimateForm/ryard/internal/rcon_client"
-	"github.com/UltimateForm/ryard/internal/util"
+	"github.com/UltimateForm/mh-gobot/internal/config"
+	"github.com/UltimateForm/mh-gobot/internal/data"
+	"github.com/UltimateForm/mh-gobot/internal/discord"
+	"github.com/UltimateForm/mh-gobot/internal/img"
+	"github.com/UltimateForm/mh-gobot/internal/parse"
+	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
+	"github.com/UltimateForm/mh-gobot/internal/util"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
@@ -196,6 +196,7 @@ func renderPopEmbed(t time.Time) (discord.RenderResult, error) {
 			Description: fmt.Sprintf("🕒 Last updated: <t:%d:R>", t.Unix()),
 			Color:       0x5865F2,
 			Fields:      baseFields,
+			Footer:      &discordgo.MessageEmbedFooter{Text: "https://github.com/UltimateForm/mh-gobot"},
 		},
 		Image: scoreboardImg,
 	}, nil

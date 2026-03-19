@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/UltimateForm/ryard/internal/parse"
+	"github.com/UltimateForm/mh-gobot/internal/parse"
 	"github.com/UltimateForm/tcprcon/pkg/packet"
 )
 

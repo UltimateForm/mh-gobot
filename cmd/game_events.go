@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/UltimateForm/ryard/internal/config"
-	"github.com/UltimateForm/ryard/internal/data"
-	"github.com/UltimateForm/ryard/internal/parse"
-	"github.com/UltimateForm/ryard/internal/rcon_client"
+	"github.com/UltimateForm/mh-gobot/internal/config"
+	"github.com/UltimateForm/mh-gobot/internal/data"
+	"github.com/UltimateForm/mh-gobot/internal/parse"
+	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
 	"github.com/bwmarrin/discordgo"
 )
 
