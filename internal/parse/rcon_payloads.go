@@ -21,7 +21,7 @@ const (
 	GrokServerInfo      = `HostName: %{GREEDYDATA:host}\nServerName: %{GREEDYDATA:server_name}\nVersion: %{GREEDYDATA:version}\nGameMode: %{GREEDYDATA:game_mode}\nMap: %{GREEDYDATA:map}`
 	GrokPlayerlistRow   = `%{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, %{GREEDYDATA}, %{GREEDYDATA}`
 	GrokMatchstate      = `MatchState: %{GREEDYDATA:state}`
-	GrokScoreboardRow   = `%{NOTSPACE:player_id}, %{DATA:user_name}, %{NUMBER}, %{NUMBER}, %{NUMBER:score}, %{NUMBER:kills}, %{NUMBER:deaths}, %{NUMBER:assists}`
+	GrokScoreboardRow   = `%{NOTSPACE:player_id}, %{DATA:user_name}, %{NUMBER:team_id}, %{NUMBER}, %{NUMBER:score}, %{NUMBER:kills}, %{NUMBER:deaths}, %{NUMBER:assists}`
 	GrokScorefeedPlayer = `Scorefeed: %{NOTSPACE:date}: %{NOTSPACE:player_id} \(%{DATA:user_name}\)'s score changed by %{NUMBER:score_change} points and is now %{NUMBER:new_score} points`
 	GrokScorefeedTeam   = `Scorefeed: %{NOTSPACE:date}: Team %{NUMBER:team_id}'s is now %{NUMBER:new_score} points from %{NUMBER:old_score} points`
 )
@@ -110,8 +110,9 @@ func ParseServerInfo(raw string) (*ServerInfo, error) {
 		Host:       values["host"],
 		ServerName: values["server_name"],
 		Version:    values["version"],
-		GameMode:   values["game_mode"],
-		Map:        values["map"],
+		// GameMode:   values["game_mode"],
+		GameMode: "Skirmish",
+		Map:      values["map"],
 	}, nil
 }
 
@@ -120,6 +121,8 @@ func ParseScoreboardRow(raw string) (*ScoreboardEntry, error) {
 	if err != nil || values == nil {
 		return nil, err
 	}
+	teamID, _ := strconv.Atoi(values["team_id"])
+	teamID++
 	score, _ := strconv.Atoi(values["score"])
 	kills, _ := strconv.Atoi(values["kills"])
 	deaths, _ := strconv.Atoi(values["deaths"])
@@ -127,6 +130,7 @@ func ParseScoreboardRow(raw string) (*ScoreboardEntry, error) {
 	return &ScoreboardEntry{
 		PlayerID: values["player_id"],
 		UserName: values["user_name"],
+		TeamID:   teamID,
 		Score:    score,
 		Kills:    kills,
 		Deaths:   deaths,

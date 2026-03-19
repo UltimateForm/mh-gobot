@@ -37,6 +37,7 @@ type ServerInfo struct {
 type ScoreboardEntry struct {
 	PlayerID string
 	UserName string
+	TeamID   int
 	Score    int
 	Kills    int
 	Deaths   int

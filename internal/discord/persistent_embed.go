@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -13,16 +14,21 @@ import (
 
 // TODO: expand to support normal messages too, no reason to bind this forever to just embeds
 
+type RenderResult struct {
+	Embed *discordgo.MessageEmbed
+	Image io.Reader // optional, nil if no image
+}
+
 type PersistentEmbed struct {
 	name     string
-	render   func(time.Time) (*discordgo.MessageEmbed, error)
+	render   func(time.Time) (RenderResult, error)
 	interval time.Duration
 	channels map[string]string
 	logger   *log.Logger
 }
 
 // channels is a map of channels and id for existing embed ids, if existing embed does not exist just pass empty id
-func NewPersistentEmbed(renderFunc func(time.Time) (*discordgo.MessageEmbed, error), name string, interval time.Duration, channels map[string]string) *PersistentEmbed {
+func NewPersistentEmbed(renderFunc func(time.Time) (RenderResult, error), name string, interval time.Duration, channels map[string]string) *PersistentEmbed {
 	return &PersistentEmbed{
 		name:     name,
 		render:   renderFunc,
@@ -41,15 +47,22 @@ func metaKey(name, channelID string) string {
 }
 
 func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t time.Time) {
-	embed, err := src.render(t)
+	result, err := src.render(t)
 	if err != nil {
 		src.logger.Printf("failed to render: %v", err)
 		return
 	}
+	embed := result.Embed
+	if result.Image != nil {
+		embed.Image = &discordgo.MessageEmbedImage{URL: "attachment://embed_image.png"}
+	}
 	for k, v := range src.channels {
 		if v != "" {
-			_, err := dc.ChannelMessageEditEmbed(k, v, embed)
-			if err != nil {
+			edit := &discordgo.MessageEdit{Channel: k, ID: v, Embed: embed, Attachments: &[]*discordgo.MessageAttachment{}}
+			if result.Image != nil {
+				edit.Files = []*discordgo.File{{Name: "embed_image.png", Reader: result.Image}}
+			}
+			if _, err := dc.ChannelMessageEditComplex(edit); err != nil {
 				src.logger.Printf("failed to edit message: %v", err)
 			}
 		} else {
@@ -62,7 +75,11 @@ func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t t
 					src.logger.Printf("failed to delete old message: %v", err)
 				}
 			}
-			msg, err := dc.ChannelMessageSendEmbed(k, embed)
+			send := &discordgo.MessageSend{Embed: embed}
+			if result.Image != nil {
+				send.Files = []*discordgo.File{{Name: "embed_image.png", Reader: result.Image}}
+			}
+			msg, err := dc.ChannelMessageSendComplex(k, send)
 			if err != nil {
 				src.logger.Printf("failed to send message: %v", err)
 				continue

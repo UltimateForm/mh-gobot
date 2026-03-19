@@ -4,15 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/UltimateForm/ryard/internal/config"
 	"github.com/UltimateForm/ryard/internal/data"
 	"github.com/UltimateForm/ryard/internal/discord"
+	"github.com/UltimateForm/ryard/internal/img"
 	"github.com/UltimateForm/ryard/internal/parse"
 	"github.com/UltimateForm/ryard/internal/rcon_client"
 	"github.com/UltimateForm/ryard/internal/util"
@@ -93,10 +96,10 @@ func Start() {
 	stopApp()
 }
 
-func renderLeaderboardEmbed(t time.Time) (*discordgo.MessageEmbed, error) {
+func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 	players, err := data.ReadTopPlayers(context.Background(), 10, data.TopCategory["score"])
 	if err != nil {
-		return nil, err
+		return discord.RenderResult{}, err
 	}
 
 	tw := table.NewWriter()
@@ -108,62 +111,49 @@ func renderLeaderboardEmbed(t time.Time) (*discordgo.MessageEmbed, error) {
 	tw.Style().Options.DrawBorder = false
 	tw.Style().Options.SeparateRows = false
 
-	return &discordgo.MessageEmbed{
-		Title:       "🏆 Score: Top 10",
-		Description: fmt.Sprintf("🕒 Last updated: <t:%d:R>", t.Unix()),
-		Color:       0xF1C40F,
-		Fields: []*discordgo.MessageEmbedField{
-			{Value: util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024)},
+	return discord.RenderResult{
+		Embed: &discordgo.MessageEmbed{
+			Title:       "🏆 Score: Top 10",
+			Description: fmt.Sprintf("🕒 Last updated: <t:%d:R>", t.Unix()),
+			Color:       0xF1C40F,
+			Fields: []*discordgo.MessageEmbedField{
+				{Value: util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024)},
+			},
 		},
 	}, nil
 }
 
-func renderPopEmbed(t time.Time) (*discordgo.MessageEmbed, error) {
+func renderPopEmbed(t time.Time) (discord.RenderResult, error) {
 	client, err := rcon_client.New(config.Global.RconUri)
 	if err != nil {
-		return nil, err
+		return discord.RenderResult{}, err
 	}
 	defer client.Close()
 
 	success, err := client.Authenticate(config.Global.RconPassword)
 	if err != nil {
-		return nil, errors.Join(errors.New("authentication error"), err)
+		return discord.RenderResult{}, errors.Join(errors.New("authentication error"), err)
 	}
 	if !success {
-		return nil, errors.New("authentication failed")
+		return discord.RenderResult{}, errors.New("authentication failed")
 	}
 
 	infoRaw, err := client.Execute("info")
 	if err != nil {
-		return nil, errors.Join(errors.New("rcon exec info err"), err)
+		return discord.RenderResult{}, errors.Join(errors.New("rcon exec info err"), err)
 	}
 	serverInfo, err := parse.ParseServerInfo(infoRaw)
 	if err != nil {
-		return nil, errors.Join(errors.New("failed to parse server info"), err)
+		return discord.RenderResult{}, errors.Join(errors.New("failed to parse server info"), err)
 	}
 
 	scoreboardRaw, err := client.Execute("scoreboard")
 	if err != nil {
-		return nil, errors.Join(errors.New("rcon exec scoreboard err"), err)
+		return discord.RenderResult{}, errors.Join(errors.New("rcon exec scoreboard err"), err)
 	}
 	entries, err := parse.ParseScoreboard(scoreboardRaw)
 	if err != nil {
-		return nil, errors.Join(errors.New("failed to parse scoreboard"), err)
-	}
-
-	var tableValue string
-	if len(entries) == 0 {
-		tableValue = "No players online"
-	} else {
-		tw := table.NewWriter()
-		tw.AppendHeader(table.Row{"#", "Player", "Score", "K", "D", "A"})
-		for i, e := range entries {
-			tw.AppendRow(table.Row{i + 1, e.UserName, e.Score, e.Kills, e.Deaths, e.Assists})
-		}
-		tw.SetStyle(table.StyleLight)
-		tw.Style().Options.DrawBorder = false
-		tw.Style().Options.SeparateRows = false
-		tableValue = util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024)
+		return discord.RenderResult{}, errors.Join(errors.New("failed to parse scoreboard"), err)
 	}
 
 	title := serverInfo.ServerName
@@ -171,25 +161,42 @@ func renderPopEmbed(t time.Time) (*discordgo.MessageEmbed, error) {
 		title = serverInfo.Host
 	}
 
-	return &discordgo.MessageEmbed{
-		Title:       "🖥️ " + title,
-		Description: fmt.Sprintf("🕒 Last updated: <t:%d:R>", t.Unix()),
-		Color:       0x5865F2,
-		Fields: []*discordgo.MessageEmbedField{
-			{
-				Name:   "🗺️ Map",
-				Value:  serverInfo.Map,
-				Inline: true,
-			},
-			{
-				Name:   "⚔️ Mode",
-				Value:  serverInfo.GameMode,
-				Inline: true,
-			},
-			{
-				Name:  fmt.Sprintf("👥 Players Online (%d)", len(entries)),
-				Value: tableValue,
-			},
+	baseFields := []*discordgo.MessageEmbedField{
+		{
+			Name:   "🗺️ Map",
+			Value:  serverInfo.Map,
+			Inline: true,
 		},
+		{
+			Name:   "⚔️ Mode",
+			Value:  serverInfo.GameMode,
+			Inline: true,
+		},
+	}
+
+	playersOnlineField := &discordgo.MessageEmbedField{
+		Name:  fmt.Sprintf("👥 Players Online (%d)", len(entries)),
+		Value: "No players online",
+	}
+	baseFields = append(baseFields, playersOnlineField)
+
+	var scoreboardImg io.Reader
+	if len(entries) > 0 {
+		skirmish := strings.EqualFold(serverInfo.GameMode, "skirmish")
+		scoreboardImg, err = img.RenderScoreboardImage(entries, skirmish)
+		if err != nil {
+			log.Printf("failed to render scoreboard image: %v", err)
+		}
+		playersOnlineField.Value = ""
+	}
+
+	return discord.RenderResult{
+		Embed: &discordgo.MessageEmbed{
+			Title:       "🖥️ " + title,
+			Description: fmt.Sprintf("🕒 Last updated: <t:%d:R>", t.Unix()),
+			Color:       0x5865F2,
+			Fields:      baseFields,
+		},
+		Image: scoreboardImg,
 	}, nil
 }
