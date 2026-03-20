@@ -86,6 +86,15 @@ func ReadTopPlayers(ctx context.Context, limit int, column string) ([]RankedPlay
 	return players, nil
 }
 
+func ReadPlayerRank(ctx context.Context, playerID string) (int, error) {
+	var rank int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) + 1 FROM players WHERE raw_score > (SELECT raw_score FROM players WHERE player_id = ?)`, playerID).Scan(&rank)
+	if err != nil {
+		return 0, errors.Join(DbPlayerReadError, err)
+	}
+	return rank, nil
+}
+
 func ReadPlayerPlacement(ctx context.Context, playerID string) (*PlayerPlacement, error) {
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

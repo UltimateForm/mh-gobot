@@ -142,11 +142,11 @@ func TestParseChatEvent(t *testing.T) {
 			wantMessage: "hello world",
 		},
 		{
-			name:        "multiline message flattened",
+			name:        "multiline message",
 			raw:         "Chat: CCCCCCCCCCCCCC, TestPlayer, (All) line one\nline two",
 			wantUser:    "TestPlayer",
 			wantChannel: "All",
-			wantMessage: `line one \ line two`,
+			wantMessage: "line one\nline two",
 		},
 		{
 			name:    "invalid",

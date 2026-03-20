@@ -83,17 +83,21 @@ func ParseLoginEvent(event string) (*LoginEvent, error) {
 }
 
 func ParseChatEvent(event string) (*ChatEvent, error) {
-	flat := strings.Join(strings.Split(event, "\n"), ` \ `)
-	values, err := parseEvent(flat, GrokChatEvent)
+	lines := strings.SplitN(event, "\n", 2)
+	values, err := parseEvent(lines[0], GrokChatEvent)
 	if err != nil || values == nil {
 		return nil, err
+	}
+	msg := strings.TrimSpace(values["message"])
+	if len(lines) > 1 {
+		msg += "\n" + lines[1]
 	}
 	return &ChatEvent{
 		EventType: values["event_type"],
 		PlayerID:  values["player_id"],
 		UserName:  values["user_name"],
 		Channel:   values["channel"],
-		Message:   values["message"],
+		Message:   msg,
 	}, nil
 }
 

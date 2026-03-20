@@ -17,8 +17,9 @@ type dcConfig struct {
 }
 
 type rconConfig struct {
-	RconUri      string
-	RconPassword string
+	RconUri           string
+	RconPassword      string
+	GameCommandPrefix string
 }
 
 type botConfig struct {
@@ -48,6 +49,13 @@ func (src *botConfig) Validate() {
 	}
 }
 
+func getEnvOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 var Global botConfig
 
 func init() {
@@ -57,14 +65,15 @@ func init() {
 	}
 	Global = botConfig{
 		dcConfig: dcConfig{
-			DcToken:       os.Getenv("DC_TOKEN"),
-			PopChannel:    os.Getenv("POP_CHANNEL"),
+			DcToken:             os.Getenv("DC_TOKEN"),
+			PopChannel:          os.Getenv("POP_CHANNEL"),
 			EventsChannel:       os.Getenv("EVENTS_CHANNEL"),
 			LeaderboardsChannel: os.Getenv("LEADERBOARDS_CHANNEL"),
 		},
 		rconConfig: rconConfig{
-			RconUri:      fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),
-			RconPassword: os.Getenv("RCON_PASSWORD"),
+			RconUri:           fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),
+			RconPassword:      os.Getenv("RCON_PASSWORD"),
+			GameCommandPrefix: getEnvOrDefault("GAME_CMD_PREFIX", "!"),
 		},
 	}
 }
