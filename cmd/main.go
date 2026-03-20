@@ -23,9 +23,12 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
+var rconPool *rcon_client.ConnectionPool
+
 func Start() {
 	config.Global.Validate()
-	// Create Discord session
+	rconPool = rcon_client.NewPool(config.Global.RconUri, config.Global.RconPassword, 5, 60*time.Second)
+
 	dg, err := discord.Create()
 	if err != nil {
 		log.Fatal(errors.Join(errors.New("failed to create dc bot"), err))
@@ -94,6 +97,7 @@ func Start() {
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 	stopApp()
+	rconPool.Close()
 }
 
 func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
@@ -124,33 +128,28 @@ func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 }
 
 func renderPopEmbed(t time.Time) (discord.RenderResult, error) {
-	client, err := rcon_client.New(config.Global.RconUri)
+	var infoRaw, scoreboardRaw string
+	err := rconPool.WithClient(context.Background(), func(client *rcon_client.ControlledClient) error {
+		var err error
+		infoRaw, err = client.Execute("info")
+		if err != nil {
+			return errors.Join(errors.New("rcon exec info err"), err)
+		}
+		scoreboardRaw, err = client.Execute("scoreboard")
+		if err != nil {
+			return errors.Join(errors.New("rcon exec scoreboard err"), err)
+		}
+		return nil
+	})
 	if err != nil {
 		return discord.RenderResult{}, err
 	}
-	defer client.Close()
 
-	success, err := client.Authenticate(config.Global.RconPassword)
-	if err != nil {
-		return discord.RenderResult{}, errors.Join(errors.New("authentication error"), err)
-	}
-	if !success {
-		return discord.RenderResult{}, errors.New("authentication failed")
-	}
-
-	infoRaw, err := client.Execute("info")
-	if err != nil {
-		return discord.RenderResult{}, errors.Join(errors.New("rcon exec info err"), err)
-	}
 	serverInfo, err := parse.ParseServerInfo(infoRaw)
 	if err != nil {
 		return discord.RenderResult{}, errors.Join(errors.New("failed to parse server info"), err)
 	}
 
-	scoreboardRaw, err := client.Execute("scoreboard")
-	if err != nil {
-		return discord.RenderResult{}, errors.Join(errors.New("rcon exec scoreboard err"), err)
-	}
 	entries, err := parse.ParseScoreboard(scoreboardRaw)
 	if err != nil {
 		return discord.RenderResult{}, errors.Join(errors.New("failed to parse scoreboard"), err)

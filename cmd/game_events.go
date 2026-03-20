@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/UltimateForm/mh-gobot/internal/config"
 	"github.com/UltimateForm/mh-gobot/internal/data"
@@ -48,7 +49,8 @@ func matchstateMsg(state string) string {
 }
 
 func chatMsg(e *parse.ChatEvent) string {
-	return fmt.Sprintf("💬 **[%s]** `%s` (%s): %s", e.Channel, e.UserName, e.PlayerID, e.Message)
+	msg := strings.Join(strings.Split(e.Message, "\n"), ` \ `)
+	return fmt.Sprintf("💬 **[%s]** `%s` (%s): %s", e.Channel, e.UserName, e.PlayerID, msg)
 }
 
 func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_client.ListenerClient) {
@@ -68,6 +70,7 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 		case state := <-listener.MatchstateEvents:
 			go logEvent(dc, matchstateMsg(state))
 		case e := <-listener.ChatEvents:
+			go gameCommandRegistry.Dispatch(ctx, e)
 			go logEvent(dc, chatMsg(e))
 		}
 	}

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/UltimateForm/mh-gobot/internal/config"
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/discord"
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
@@ -80,18 +79,13 @@ func handleRconxCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 }
 
 func executeRconCommand(cmd string) (string, error) {
-	client, err := rcon_client.New(config.Global.RconUri)
-	if err != nil {
-		return "", err
-	}
-	success, err := client.Authenticate(config.Global.RconPassword)
-	if err != nil {
-		return "", errors.Join(errors.New("authentication error"), err)
-	}
-	if !success {
-		return "", errors.New("authentication failed")
-	}
-	return client.Execute(cmd)
+	var result string
+	err := rconPool.WithClient(context.Background(), func(client *rcon_client.ControlledClient) error {
+		var err error
+		result, err = client.Execute(cmd)
+		return err
+	})
+	return result, err
 }
 
 func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {

@@ -2,7 +2,7 @@ BINARY=mh-gobot
 IMAGE=mh-gobot
 ENV_FILE=.env
 
-.PHONY: test build run docker-build docker-run docker-run-detached docker-kill-detached
+.PHONY: test build run watch-cons docker-build docker-run docker-run-detached docker-kill-detached
 
 test:
 	go test ./...
@@ -12,6 +12,9 @@ build:
 
 run: build
 	.out/$(BINARY)
+
+watch-cons:
+	watch -n 1 'ss -tp | grep $(BINARY)'
 
 docker-build:
 	docker build -t $(IMAGE) .
