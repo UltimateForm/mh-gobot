@@ -11,8 +11,9 @@ A Discord bot that bridges Discord and game servers via RCON. Listens to live ga
 - Auto-recovery on RCON connection loss
 - Persistent leaderboard and server status embeds in Discord (image-based)
 - RCON connection pooling for ad-hoc commands
-- Discord slash commands: `/score`, `/place`, `/top`, `/rconx`
-- In-game chat commands: `!score`, `!roll`
+- Player vs player kill ledger with historical tracking
+- Discord slash commands: `/score`, `/place`, `/top`, `/versus`, `/nemesis`, `/prey`, `/rconx`
+- In-game chat commands: `!score`, `!roll`, `!versus`
 
 ## Requirements
 
