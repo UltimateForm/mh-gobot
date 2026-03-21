@@ -56,5 +56,13 @@ func init() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS kill_ledger (
+		killer_id TEXT NOT NULL,
+		killed_id TEXT NOT NULL,
+		count     INTEGER NOT NULL DEFAULT 1,
+		PRIMARY KEY (killer_id, killed_id)
+	)`)
+	if err != nil {
+		logger.Fatal(err)
+	}
 }

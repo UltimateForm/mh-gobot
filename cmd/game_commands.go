@@ -55,6 +55,27 @@ func handleScoreGameCommand(ctx context.Context, event *parse.ChatEvent, args []
 	return rconSay(ctx, msg)
 }
 
+func handleVersusGameCommand(ctx context.Context, event *parse.ChatEvent, args []string) error {
+	if len(args) == 0 {
+		return rconSay(ctx, "Versus: provide a player name or ID")
+	}
+
+	p2, err := resolvePlayer(args[0])
+	if errors.Is(err, data.DbPlayerNotFound) {
+		return rconSay(ctx, fmt.Sprintf("Versus: player '%s' not found", args[0]))
+	}
+	if err != nil {
+		return err
+	}
+
+	versus, err := data.ReadVersus(ctx, event.PlayerID, p2.PlayerID)
+	if err != nil {
+		return err
+	}
+
+	return rconSay(ctx, fmt.Sprintf("%s vs %s: %d - %d", event.UserName, p2.Username, versus.AKills, versus.BKills))
+}
+
 func handleRollGameCommand(ctx context.Context, event *parse.ChatEvent, args []string) error {
 	n := rand.Intn(100)
 	return rconSay(ctx, fmt.Sprintf("%s rolled a %02d", event.UserName, n))
@@ -65,5 +86,6 @@ var gameCommandRegistry = game.NewGameCommandRegistry(
 	[]game.GameCommand{
 		{Name: "score", Handler: handleScoreGameCommand},
 		{Name: "roll", Handler: handleRollGameCommand},
+		{Name: "versus", Handler: handleVersusGameCommand},
 	},
 )

@@ -17,6 +17,18 @@ import (
 )
 
 
+func errorEmbed(msg string) *discordgo.MessageEmbed {
+	return &discordgo.MessageEmbed{Title: "Error", Description: msg, Color: 0xFF0000}
+}
+
+func notFoundEmbed(query string) *discordgo.MessageEmbed {
+	return &discordgo.MessageEmbed{
+		Title:       "Player Not Found",
+		Description: fmt.Sprintf("No stats found for `%s`", query),
+		Color:       0xFF0000,
+	}
+}
+
 func handleRconxCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	options := i.ApplicationCommandData().Options
 	var cmdString string
@@ -99,11 +111,7 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	var embed *discordgo.MessageEmbed
 	if errors.Is(err, data.DbPlayerNotFound) {
-		embed = &discordgo.MessageEmbed{
-			Title:       "Player Not Found",
-			Description: fmt.Sprintf("No stats found for `%s`", playerID),
-			Color:       0xFF0000,
-		}
+		embed = notFoundEmbed(playerID)
 	} else if err != nil {
 		log.Printf("stats command error: %v", err)
 		embed = &discordgo.MessageEmbed{
@@ -151,7 +159,7 @@ func handleTopCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	var embed *discordgo.MessageEmbed
 	if err != nil {
 		log.Printf("top command error: %v", err)
-		embed = &discordgo.MessageEmbed{Title: "Error", Color: 0xFF0000}
+		embed = errorEmbed("")
 	} else {
 		tw := table.NewWriter()
 		tw.AppendHeader(table.Row{"#", "Player", "Score", "K", "D", "A"})
@@ -175,6 +183,142 @@ func handleTopCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	})
 }
 
+func ledgerListEmbed(title string, subject *data.Player, entries []data.LedgerEntry) *discordgo.MessageEmbed {
+	if len(entries) == 0 {
+		return &discordgo.MessageEmbed{
+			Title:       title,
+			Description: fmt.Sprintf("No data found for **%s**", subject.Username),
+			Color:       0x95A5A6,
+		}
+	}
+	tw := table.NewWriter()
+	tw.AppendHeader(table.Row{"#", "Player", "Kills"})
+	for i, e := range entries {
+		tw.AppendRow(table.Row{i + 1, e.Username, e.Count})
+	}
+	tw.SetStyle(table.StyleLight)
+	tw.Style().Options.DrawBorder = false
+	tw.Style().Options.SeparateRows = false
+	return &discordgo.MessageEmbed{
+		Title:       title,
+		Description: fmt.Sprintf("```\n%s\n```", tw.Render()),
+		Color:       0xE74C3C,
+		Footer:      &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("Player ID: %s", subject.PlayerID)},
+	}
+}
+
+func handleNemesisCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	query := i.ApplicationCommandData().Options[0].StringValue()
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+	player, err := resolvePlayer(query)
+	if err != nil {
+		var embed *discordgo.MessageEmbed
+		if errors.Is(err, data.DbPlayerNotFound) {
+			embed = notFoundEmbed(query)
+		} else {
+			log.Printf("nemesis command error: %v", err)
+			embed = errorEmbed("")
+		}
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+		return
+	}
+	entries, err := data.ReadTopKillersOf(context.Background(), player.PlayerID, 10)
+	if err != nil {
+		log.Printf("nemesis command read error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{{Title: "Error", Color: 0xFF0000}}})
+		return
+	}
+	embed := ledgerListEmbed(fmt.Sprintf("☠️ Top killers of %s", player.Username), player, entries)
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+}
+
+func handlePreyCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	query := i.ApplicationCommandData().Options[0].StringValue()
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+	player, err := resolvePlayer(query)
+	if err != nil {
+		var embed *discordgo.MessageEmbed
+		if errors.Is(err, data.DbPlayerNotFound) {
+			embed = notFoundEmbed(query)
+		} else {
+			log.Printf("prey command error: %v", err)
+			embed = errorEmbed("")
+		}
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+		return
+	}
+	entries, err := data.ReadTopVictimsOf(context.Background(), player.PlayerID, 10)
+	if err != nil {
+		log.Printf("prey command read error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{{Title: "Error", Color: 0xFF0000}}})
+		return
+	}
+	embed := ledgerListEmbed(fmt.Sprintf("🎯 Top victims of %s", player.Username), player, entries)
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+}
+
+func handleVersusCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	options := i.ApplicationCommandData().Options
+	player1Query := options[0].StringValue()
+	player2Query := options[1].StringValue()
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	p1, err := resolvePlayer(player1Query)
+	if err != nil {
+		var embed *discordgo.MessageEmbed
+		if errors.Is(err, data.DbPlayerNotFound) {
+			embed = notFoundEmbed(player1Query)
+		} else {
+			log.Printf("versus command p1 error: %v", err)
+			embed = errorEmbed("")
+		}
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+		return
+	}
+
+	p2, err := resolvePlayer(player2Query)
+	if err != nil {
+		var embed *discordgo.MessageEmbed
+		if errors.Is(err, data.DbPlayerNotFound) {
+			embed = notFoundEmbed(player2Query)
+		} else {
+			log.Printf("versus command p2 error: %v", err)
+			embed = errorEmbed("")
+		}
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+		return
+	}
+
+	versus, err := data.ReadVersus(context.Background(), p1.PlayerID, p2.PlayerID)
+	if err != nil {
+		log.Printf("versus command read error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{{Title: "Error", Color: 0xFF0000}}})
+		return
+	}
+
+	embed := &discordgo.MessageEmbed{
+		Title: "⚔️ Versus",
+		Color: 0xE74C3C,
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: p1.Username, Value: fmt.Sprintf("```ansi\n\u001b[31;1m%d kills\u001b[0m\n```", versus.AKills), Inline: true},
+			{Name: ":vs:", Value: "\u200b", Inline: true},
+			{Name: p2.Username, Value: fmt.Sprintf("```ansi\n\u001b[31;1m%d kills\u001b[0m\n```", versus.BKills), Inline: true},
+		},
+		Footer: &discordgo.MessageEmbedFooter{
+			Text: fmt.Sprintf("%s vs %s", p1.PlayerID, p2.PlayerID),
+		},
+	}
+
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+}
+
 func resolvePlayer(query string) (*data.Player, error) {
 	if util.IsPlayfabID(query) {
 		return data.ReadPlayer(context.Background(), query)
@@ -193,19 +337,15 @@ func handlePlaceCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	var embed *discordgo.MessageEmbed
 	if errors.Is(err, data.DbPlayerNotFound) {
-		embed = &discordgo.MessageEmbed{
-			Title:       "Player Not Found",
-			Description: fmt.Sprintf("No stats found for `%s`", query),
-			Color:       0xFF0000,
-		}
+		embed = notFoundEmbed(query)
 	} else if err != nil {
 		log.Printf("place command error: %v", err)
-		embed = &discordgo.MessageEmbed{Title: "Error", Color: 0xFF0000}
+		embed = errorEmbed("")
 	} else {
 		placement, err := data.ReadPlayerPlacement(context.Background(), player.PlayerID)
 		if err != nil {
 			log.Printf("place command placement error: %v", err)
-			embed = &discordgo.MessageEmbed{Title: "Error", Color: 0xFF0000}
+			embed = errorEmbed("")
 		} else {
 			var sb strings.Builder
 			for _, rp := range placement.Snippet {
@@ -283,7 +423,48 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 		},
 		Handler: handleTopCommand,
 	},
-	discord.Command{
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:        "nemesis",
+			Description: "Top 10 players who killed a player the most",
+			Options: []*discordgo.ApplicationCommandOption{
+				{Type: discordgo.ApplicationCommandOptionString, Name: "player", Description: "PlayFab ID or player name", Required: true},
+			},
+		},
+		Handler: handleNemesisCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:        "prey",
+			Description: "Top 10 players a player has killed the most",
+			Options: []*discordgo.ApplicationCommandOption{
+				{Type: discordgo.ApplicationCommandOptionString, Name: "player", Description: "PlayFab ID or player name", Required: true},
+			},
+		},
+		Handler: handlePreyCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:        "versus",
+			Description: "Show kill tally between two players",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "player1",
+					Description: "PlayFab ID or player name",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "player2",
+					Description: "PlayFab ID or player name",
+					Required:    true,
+				},
+			},
+		},
+		Handler: handleVersusCommand,
+	},
+	{
 		Definition: &discordgo.ApplicationCommand{
 			Name:                     "rconx",
 			Description:              "Execute an RCON command",

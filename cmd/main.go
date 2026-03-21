@@ -101,7 +101,7 @@ func Start() {
 }
 
 func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
-	players, err := data.ReadTopPlayers(context.Background(), 10, data.TopCategory["score"])
+	players, err := data.ReadTopPlayers(context.Background(), 20, data.TopCategory["score"])
 	if err != nil {
 		return discord.RenderResult{}, err
 	}
@@ -115,14 +115,15 @@ func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 	tw.Style().Options.DrawBorder = false
 	tw.Style().Options.SeparateRows = false
 
+	timestamp := fmt.Sprintf("🕒 Last updated: <t:%d:R>\n", t.Unix())
+	// len is wrong here, same inside TruncateCodeStringByLine but idc right now
+	// TODO: fix this lol
+	tableStr := util.TruncateCodeStringByLine(fmt.Sprintf("```\n%s\n```", tw.Render()), 4096-len(timestamp))
 	return discord.RenderResult{
 		Embed: &discordgo.MessageEmbed{
-			Title:       "🏆 Score: Top 10",
-			Description: fmt.Sprintf("🕒 Last updated: <t:%d:R>", t.Unix()),
+			Title:       "🏆 Score: Top 20",
+			Description: timestamp + tableStr,
 			Color:       0xF1C40F,
-			Fields: []*discordgo.MessageEmbedField{
-				{Value: util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024)},
-			},
 		},
 	}, nil
 }
@@ -171,10 +172,38 @@ func renderPopEmbed(t time.Time) (discord.RenderResult, error) {
 			Value:  serverInfo.GameMode,
 			Inline: true,
 		},
+		{
+			Name:   "\u200b",
+			Value:  "\u200b",
+			Inline: true,
+		},
 	}
 
+	agg, err := data.ReadAggregates(context.Background())
+	if err != nil {
+		return discord.RenderResult{}, err
+	}
+	baseFields = append(baseFields,
+		&discordgo.MessageEmbedField{
+			// hehe this is actually kind of a lie :D we are counting players who have came in and either killed or died
+			Name:   "👥 Total Players",
+			Value:  fmt.Sprintf("```ansi\n\u001b[34;1m%d\u001b[0m\n```", agg.TotalPlayers),
+			Inline: true,
+		},
+		&discordgo.MessageEmbedField{
+			Name:   "⚔️ Total Kills",
+			Value:  fmt.Sprintf("```ansi\n\u001b[31;1m%s\u001b[0m\n```", util.HumanFormat(agg.TotalKills)),
+			Inline: true,
+		},
+		&discordgo.MessageEmbedField{
+			Name:   "🪦 Total Deaths",
+			Value:  fmt.Sprintf("```ansi\n\u001b[31m%s\u001b[0m\n```", util.HumanFormat(agg.TotalDeaths)),
+			Inline: true,
+		},
+	)
+
 	playersOnlineField := &discordgo.MessageEmbedField{
-		Name:  fmt.Sprintf("👥 Players Online (%d)", len(entries)),
+		Name:  fmt.Sprintf("🎮 Players Online (%d)", len(entries)),
 		Value: "No players online",
 	}
 	baseFields = append(baseFields, playersOnlineField)

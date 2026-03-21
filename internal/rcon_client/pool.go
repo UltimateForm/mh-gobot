@@ -36,7 +36,6 @@ func NewPool(uri, password string, maxSize int, staleAfter time.Duration) *Conne
 }
 
 func (p *ConnectionPool) newClient() (*ControlledClient, error) {
-	p.logger.Printf("creating new client...")
 	client, err := New(p.uri)
 	if err != nil {
 		return nil, err
@@ -50,7 +49,7 @@ func (p *ConnectionPool) newClient() (*ControlledClient, error) {
 		client.Close()
 		return nil, errors.New("authentication failed")
 	}
-	p.logger.Printf("new client created and authenticated")
+	p.logger.Printf("new client created [allocated=%d]", p.allocated)
 	return client, nil
 }
 
@@ -59,20 +58,18 @@ func (p *ConnectionPool) isStale(client *ControlledClient) bool {
 }
 
 func (p *ConnectionPool) Get(ctx context.Context) (*ControlledClient, error) {
-	p.logger.Printf("Get() called [allocated=%d, idle=%d]", p.allocated, len(p.idle))
 	for {
 		// 1. Non-blocking try from idle pool
 		select {
 		case client := <-p.idle:
 			if p.isStale(client) {
-				p.logger.Printf("pulled stale client from idle, discarding [allocated=%d]", p.allocated)
+				p.logger.Printf("discarding stale client [allocated=%d]", p.allocated)
 				client.Close()
 				p.mu.Lock()
 				p.allocated--
 				p.mu.Unlock()
 				continue
 			}
-			p.logger.Printf("reusing idle client [allocated=%d, idle=%d]", p.allocated, len(p.idle))
 			return client, nil
 		default:
 		}
@@ -81,8 +78,6 @@ func (p *ConnectionPool) Get(ctx context.Context) (*ControlledClient, error) {
 		p.mu.Lock()
 		if p.allocated < p.maxSize {
 			p.allocated++
-			inUse := p.allocated - len(p.idle)
-			p.logger.Printf("allocating new client [allocated=%d, in-use=%d]", p.allocated, inUse)
 			p.mu.Unlock()
 			client, err := p.newClient()
 			if err != nil {
@@ -97,20 +92,18 @@ func (p *ConnectionPool) Get(ctx context.Context) (*ControlledClient, error) {
 		p.mu.Unlock()
 
 		// 3. Pool at capacity — block until a client is returned or ctx is done
-		p.logger.Printf("pool at capacity [allocated=%d, maxSize=%d], waiting...", p.allocated, p.maxSize)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case client := <-p.idle:
 			if p.isStale(client) {
-				p.logger.Printf("pulled stale client while waiting, discarding, retrying [allocated=%d]", p.allocated)
+				p.logger.Printf("discarding stale client [allocated=%d]", p.allocated)
 				client.Close()
 				p.mu.Lock()
 				p.allocated--
 				p.mu.Unlock()
 				continue
 			}
-			p.logger.Printf("got idle client after waiting [allocated=%d, idle=%d]", p.allocated, len(p.idle))
 			return client, nil
 		}
 	}
@@ -119,7 +112,6 @@ func (p *ConnectionPool) Get(ctx context.Context) (*ControlledClient, error) {
 func (p *ConnectionPool) Release(client *ControlledClient) {
 	select {
 	case p.idle <- client:
-		p.logger.Printf("client released to idle [allocated=%d, idle=%d]", p.allocated, len(p.idle))
 	default:
 		// Idle channel is sized to maxSize so this shouldn't normally happen
 		p.logger.Printf("idle pool full on release, closing excess client [allocated=%d]", p.allocated)
@@ -135,7 +127,6 @@ func (p *ConnectionPool) Discard(client *ControlledClient) {
 	p.mu.Lock()
 	p.allocated--
 	p.mu.Unlock()
-	p.logger.Printf("client discarded [allocated=%d, idle=%d]", p.allocated, len(p.idle))
 }
 
 func (p *ConnectionPool) WithClient(ctx context.Context, fn func(*ControlledClient) error) error {
@@ -154,14 +145,13 @@ func (p *ConnectionPool) WithClient(ctx context.Context, fn func(*ControlledClie
 func (p *ConnectionPool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.logger.Printf("closing pool [allocated=%d, idle=%d]", p.allocated, len(p.idle))
 	for {
 		select {
 		case client := <-p.idle:
 			client.Close()
 			p.allocated--
 		default:
-			p.logger.Printf("pool drained [remaining in-use=%d]", p.allocated)
+			p.logger.Printf("pool closed [remaining in-use=%d]", p.allocated)
 			return
 		}
 	}

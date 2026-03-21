@@ -67,6 +67,13 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 			go logEvent(dc, killfeedMsg(e))
 			go persistPlayer(parse.MapKilledFromKillfeed(*e))
 			go persistPlayer(parse.MapKillerFromKillfeed(*e))
+			if !e.IsAssist {
+				go func() {
+					if err := data.UpsertKillLedger(context.Background(), e.KillerID, e.KilledID); err != nil {
+						log.Printf("kill ledger upsert error: %v", err)
+					}
+				}()
+			}
 		case state := <-listener.MatchstateEvents:
 			go logEvent(dc, matchstateMsg(state))
 		case e := <-listener.ChatEvents:

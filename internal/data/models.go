@@ -5,9 +5,11 @@ type Player struct {
 	Username string
 	RawScore int
 	Score    int
-	Kills    int
-	Deaths   int
-	Assists  int
+	// TODO: consider (AT THE VERY LEAST BRO) removing kills/deaths since with ledger we are achieving that already
+	// data redundancy kinda jumps to the eye
+	Kills   int
+	Deaths  int
+	Assists int
 }
 
 type RankedPlayer struct {
@@ -18,4 +20,10 @@ type RankedPlayer struct {
 type PlayerPlacement struct {
 	Rank    int
 	Snippet []RankedPlayer
+}
+
+type PlayerAggregates struct {
+	TotalPlayers int
+	TotalKills   int
+	TotalDeaths  int
 }

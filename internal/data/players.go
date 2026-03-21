@@ -126,3 +126,13 @@ func ReadPlayerPlacement(ctx context.Context, playerID string) (*PlayerPlacement
 
 	return &PlayerPlacement{Rank: rank, Snippet: snippet}, nil
 }
+
+func ReadAggregates(ctx context.Context) (*PlayerAggregates, error) {
+	var agg PlayerAggregates
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(kills), 0), COALESCE(SUM(deaths), 0) FROM players`).
+		Scan(&agg.TotalPlayers, &agg.TotalKills, &agg.TotalDeaths)
+	if err != nil {
+		return nil, errors.Join(DbPlayerReadError, err)
+	}
+	return &agg, nil
+}
