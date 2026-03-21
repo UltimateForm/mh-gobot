@@ -37,8 +37,7 @@ func RenderScoreboardImage(entries []*parse.ScoreboardEntry, skirmish bool) (io.
 		cols = []col{
 			{"#", 0, true},
 			{"PLAYER", 36, false},
-			{"SCORE", 390, true},
-			{"T", 430, true},
+			{"SCORE", 420, true},
 			{"K", 460, true},
 			{"D", 490, true},
 			{"A", 520, true},
@@ -116,7 +115,6 @@ func RenderScoreboardImage(entries []*parse.ScoreboardEntry, skirmish bool) (io.
 				fmt.Sprintf("%d", i+1),
 				e.UserName,
 				fmt.Sprintf("%d", e.Score),
-				fmt.Sprintf("%d", e.TeamID),
 				fmt.Sprintf("%d", e.Kills),
 				fmt.Sprintf("%d", e.Deaths),
 				fmt.Sprintf("%d", e.Assists),
