@@ -15,6 +15,7 @@ import (
 	"github.com/UltimateForm/mh-gobot/internal/config"
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/discord"
+	"github.com/UltimateForm/mh-gobot/internal/game"
 	"github.com/UltimateForm/mh-gobot/internal/img"
 	"github.com/UltimateForm/mh-gobot/internal/parse"
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
@@ -71,10 +72,14 @@ func Start() {
 		log.Fatal(err)
 	}
 
+	skirmishTracker := game.NewSkirmishTracker(rconPool, config.Global.EventsChannel, config.Global.SkirmishWinCap)
+	deathmatchTracker := game.NewDeathmatchTracker()
+	gameRouter := game.NewGameRouter(rconPool, skirmishTracker, deathmatchTracker)
+
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
 		rconlistener.Run(appCtx)
-		go handleEvents(appCtx, s, rconlistener)
+		go handleEvents(appCtx, s, rconlistener, gameRouter)
 		commandRegistry.Register(s)
 		if persistentPopWatch != nil {
 			persistentPopWatch.Run(appCtx, dg)
@@ -109,7 +114,7 @@ func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 	tw := table.NewWriter()
 	tw.AppendHeader(table.Row{"#", "Player", "Score", "K", "D", "A"})
 	for _, p := range players {
-		tw.AppendRow(table.Row{p.Rank, p.Username, util.HumanFormat(p.RawScore), p.Kills, p.Deaths, p.Assists})
+		tw.AppendRow(table.Row{p.Rank, p.Username, util.HumanFormat(p.Score), p.Kills, p.Deaths, p.Assists})
 	}
 	tw.SetStyle(table.StyleLight)
 	tw.Style().Options.DrawBorder = false

@@ -260,8 +260,8 @@ func TestParseScorefeedEvent_Team(t *testing.T) {
 	if player != nil {
 		t.Errorf("expected nil player event, got %+v", player)
 	}
-	if team.TeamID != 0 {
-		t.Errorf("TeamID = %d, want 0", team.TeamID)
+	if team.TeamID != 1 {
+		t.Errorf("TeamID = %d, want 1", team.TeamID)
 	}
 	if team.NewScore != 500 {
 		t.Errorf("NewScore = %v, want 500", team.NewScore)

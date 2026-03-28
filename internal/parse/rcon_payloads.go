@@ -114,9 +114,8 @@ func ParseServerInfo(raw string) (*ServerInfo, error) {
 		Host:       values["host"],
 		ServerName: values["server_name"],
 		Version:    values["version"],
-		// GameMode:   values["game_mode"],
-		GameMode: "Skirmish",
-		Map:      values["map"],
+		GameMode:   values["game_mode"],
+		Map:        values["map"],
 	}, nil
 }
 
@@ -179,6 +178,7 @@ func ParseScorefeedTeamEvent(raw string) (*ScorefeedTeamEvent, error) {
 		return nil, err
 	}
 	teamID, _ := strconv.Atoi(values["team_id"])
+	teamID++
 	newScore, _ := strconv.ParseFloat(values["new_score"], 64)
 	oldScore, _ := strconv.ParseFloat(values["old_score"], 64)
 	return &ScorefeedTeamEvent{

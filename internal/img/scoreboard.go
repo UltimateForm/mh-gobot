@@ -49,7 +49,6 @@ func RenderScoreboardImage(entries []*parse.ScoreboardEntry, skirmish bool) (io.
 			{"SCORE", 420, true},
 			{"K", 460, true},
 			{"D", 490, true},
-			{"A", 520, true},
 		}
 	}
 
@@ -126,7 +125,6 @@ func RenderScoreboardImage(entries []*parse.ScoreboardEntry, skirmish bool) (io.
 				fmt.Sprintf("%d", e.Score),
 				fmt.Sprintf("%d", e.Kills),
 				fmt.Sprintf("%d", e.Deaths),
-				fmt.Sprintf("%d", e.Assists),
 			}
 		}
 		for j, c := range cols {

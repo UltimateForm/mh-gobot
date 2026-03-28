@@ -33,6 +33,59 @@ func TestIsPlayfabID(t *testing.T) {
 	}
 }
 
+func TestSplitChunks(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		limit int
+		want  []string
+	}{
+		{
+			name:  "fits in one chunk",
+			input: "hello\nworld",
+			limit: 300,
+			want:  []string{"hello\nworld"},
+		},
+		{
+			name:  "splits when over limit",
+			input: "line1\nline2\nline3",
+			limit: 12,
+			want:  []string{"line1\nline2", "line3"},
+		},
+		{
+			name:  "each line is its own chunk",
+			input: "aaaaa\nbbbbb\nccccc",
+			limit: 6,
+			want:  []string{"aaaaa", "bbbbb", "ccccc"},
+		},
+		{
+			name:  "single line",
+			input: "hello",
+			limit: 300,
+			want:  []string{"hello"},
+		},
+		{
+			name:  "multibyte runes counted correctly",
+			input: "αβγδε\nfghij",
+			limit: 12,
+			want:  []string{"αβγδε\nfghij"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := SplitChunks(tt.input, tt.limit)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %d chunks, want %d: %v", len(got), len(tt.want), got)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("chunk[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestTruncateCodeString(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -20,6 +21,7 @@ type rconConfig struct {
 	RconUri           string
 	RconPassword      string
 	GameCommandPrefix string
+	SkirmishWinCap    float64
 }
 
 type botConfig struct {
@@ -74,6 +76,7 @@ func init() {
 			RconUri:           fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),
 			RconPassword:      os.Getenv("RCON_PASSWORD"),
 			GameCommandPrefix: getEnvOrDefault("GAME_CMD_PREFIX", "!"),
+			SkirmishWinCap:    func() float64 { v, _ := strconv.ParseFloat(getEnvOrDefault("SKIRMISH_WIN_CAP", "10"), 64); return v }(),
 		},
 	}
 }

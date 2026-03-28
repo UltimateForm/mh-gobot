@@ -10,6 +10,7 @@ import (
 
 type GameCommand struct {
 	Name    string
+	Aliases []string
 	Handler func(ctx context.Context, event *parse.ChatEvent, args []string) error
 }
 
@@ -23,6 +24,9 @@ func NewGameCommandRegistry(prefix string, commands []GameCommand) *GameCommandR
 	handlers := make(map[string]func(ctx context.Context, event *parse.ChatEvent, args []string) error, len(commands))
 	for _, c := range commands {
 		handlers[c.Name] = c.Handler
+		for _, alias := range c.Aliases {
+			handlers[alias] = c.Handler
+		}
 	}
 	return &GameCommandRegistry{
 		prefix:   prefix,

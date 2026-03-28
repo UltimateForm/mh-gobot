@@ -8,6 +8,7 @@ import (
 
 	"github.com/UltimateForm/mh-gobot/internal/config"
 	"github.com/UltimateForm/mh-gobot/internal/data"
+	"github.com/UltimateForm/mh-gobot/internal/game"
 	"github.com/UltimateForm/mh-gobot/internal/parse"
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
 	"github.com/bwmarrin/discordgo"
@@ -53,7 +54,7 @@ func chatMsg(e *parse.ChatEvent) string {
 	return fmt.Sprintf("💬 **[%s]** `%s` (%s): %s", e.Channel, e.UserName, e.PlayerID, msg)
 }
 
-func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_client.ListenerClient) {
+func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_client.ListenerClient, tracker game.GameTrackerCompute) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -61,8 +62,10 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 		case e := <-listener.ScorefeedPlayerEvents:
 			go logEvent(dc, scorefeedPlayerMsg(e))
 			go persistPlayer(parse.MapPlayerScore(*e))
+			tracker.OnPlayerScore(e)
 		case e := <-listener.ScorefeedTeamEvents:
 			go logEvent(dc, scorefeedTeamMsg(e))
+			go tracker.OnTeamScore(ctx, dc, e)
 		case e := <-listener.KillfeedEvents:
 			go logEvent(dc, killfeedMsg(e))
 			go persistPlayer(parse.MapKilledFromKillfeed(*e))
@@ -76,6 +79,7 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 			}
 		case state := <-listener.MatchstateEvents:
 			go logEvent(dc, matchstateMsg(state))
+			tracker.OnMatchState(state)
 		case e := <-listener.ChatEvents:
 			go gameCommandRegistry.Dispatch(ctx, e)
 			go logEvent(dc, chatMsg(e))

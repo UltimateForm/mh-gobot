@@ -38,13 +38,15 @@ func init() {
 	// this will pretty much make writes happen to a log file
 	db.Exec("PRAGMA journal_mode=WAL")
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS players (
-		player_id TEXT PRIMARY KEY,
-		username  TEXT NOT NULL,
-		raw_score INTEGER NOT NULL DEFAULT 0,
-		score     INTEGER NOT NULL DEFAULT 0,
-		kills     INTEGER NOT NULL DEFAULT 0,
-		deaths    INTEGER NOT NULL DEFAULT 0,
-		assists   INTEGER NOT NULL DEFAULT 0
+		player_id   TEXT    PRIMARY KEY,
+		username    TEXT    NOT NULL,
+		raw_score   INTEGER NOT NULL DEFAULT 0,
+		score       INTEGER NOT NULL DEFAULT 0,
+		kills       INTEGER NOT NULL DEFAULT 0,
+		deaths      INTEGER NOT NULL DEFAULT 0,
+		assists     INTEGER NOT NULL DEFAULT 0,
+		rounds_won  INTEGER NOT NULL DEFAULT 0,
+		matches_won INTEGER NOT NULL DEFAULT 0
 	)`)
 	if err != nil {
 		logger.Fatal(err)

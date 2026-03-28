@@ -121,7 +121,7 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	} else {
 		embed = &discordgo.MessageEmbed{
 			Title:       "🏆 Lifetime Score",
-			Description: fmt.Sprintf("```ansi\n%s — \u001b[33;1m%s pts\u001b[0m\n```", player.Username, util.HumanFormat(player.RawScore)), // TODO: switch to computed score once scoring logic is defined
+			Description: fmt.Sprintf("```ansi\n%s — \u001b[33;1m%s pts\u001b[0m\n```", player.Username, util.HumanFormat(player.Score)),
 			Color:       0xF1C40F,
 			Fields: []*discordgo.MessageEmbedField{
 				{Name: "⚔️ Kills", Value: fmt.Sprintf("```ansi\n\u001b[31;1m%d\u001b[0m\n```", player.Kills), Inline: true},
@@ -164,7 +164,7 @@ func handleTopCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		tw := table.NewWriter()
 		tw.AppendHeader(table.Row{"#", "Player", "Score", "K", "D", "A"})
 		for _, p := range players {
-			tw.AppendRow(table.Row{p.Rank, p.Username, util.HumanFormat(p.RawScore), p.Kills, p.Deaths, p.Assists})
+			tw.AppendRow(table.Row{p.Rank, p.Username, util.HumanFormat(p.Score), p.Kills, p.Deaths, p.Assists})
 		}
 		tw.SetStyle(table.StyleLight)
 		tw.Style().Options.DrawBorder = false

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 
 	"github.com/UltimateForm/mh-gobot/internal/config"
@@ -12,7 +11,6 @@ import (
 	"github.com/UltimateForm/mh-gobot/internal/game"
 	"github.com/UltimateForm/mh-gobot/internal/parse"
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
-	"github.com/UltimateForm/mh-gobot/internal/util"
 )
 
 func rconSay(ctx context.Context, msg string) error {
@@ -25,9 +23,7 @@ func rconSay(ctx context.Context, msg string) error {
 func handleScoreGameCommand(ctx context.Context, event *parse.ChatEvent, args []string) error {
 	var player *data.Player
 	var err error
-	log.Printf("called with %v", args)
 	if len(args) == 0 {
-		log.Printf("ok execing command for %v", event.PlayerID)
 		player, err = data.ReadPlayer(ctx, event.PlayerID)
 	} else {
 		player, err = resolvePlayer(args[0])
@@ -42,9 +38,9 @@ func handleScoreGameCommand(ctx context.Context, event *parse.ChatEvent, args []
 	if err != nil {
 		rank = 0
 	}
-	msg := fmt.Sprintf("%s: Score %s | K %d | D %d | A %d",
+	msg := fmt.Sprintf("%s: Score %d | K %d | D %d | A %d",
 		player.Username,
-		util.HumanFormat(player.RawScore),
+		player.Score,
 		player.Kills,
 		player.Deaths,
 		player.Assists,
@@ -86,6 +82,6 @@ var gameCommandRegistry = game.NewGameCommandRegistry(
 	[]game.GameCommand{
 		{Name: "score", Handler: handleScoreGameCommand},
 		{Name: "roll", Handler: handleRollGameCommand},
-		{Name: "versus", Handler: handleVersusGameCommand},
+		{Name: "versus", Aliases: []string{"vs"}, Handler: handleVersusGameCommand},
 	},
 )

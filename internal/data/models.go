@@ -7,9 +7,11 @@ type Player struct {
 	Score    int
 	// TODO: consider (AT THE VERY LEAST BRO) removing kills/deaths since with ledger we are achieving that already
 	// data redundancy kinda jumps to the eye
-	Kills   int
-	Deaths  int
-	Assists int
+	Kills      int
+	Deaths     int
+	Assists    int
+	RoundsWon  int
+	MatchesWon int
 }
 
 type RankedPlayer struct {

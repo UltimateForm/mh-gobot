@@ -12,6 +12,7 @@ A Discord bot that bridges Discord and game servers via RCON. Listens to live ga
 - Persistent leaderboard and server status embeds in Discord (image-based)
 - RCON connection pooling for ad-hoc commands
 - Player vs player kill ledger with historical tracking
+- Skirmish score tracker: round/match win bonuses with team size and score margin factors
 - Discord slash commands: `/score`, `/place`, `/top`, `/versus`, `/nemesis`, `/prey`, `/rconx`
 - In-game chat commands: `!score`, `!roll`, `!versus`
 
@@ -35,6 +36,7 @@ Copy `.env.example` to `.env` and fill in the values:
 | `EVENTS_CHANNEL` | no | Channel ID for live game event messages |
 | `LEADERBOARDS_CHANNEL` | no | Channel ID for the persistent leaderboard embed |
 | `GAME_CMD_PREFIX` | no | In-game command prefix (default: `!`) |
+| `SKIRMISH_WIN_CAP` | no | Round wins needed to win a skirmish match (default: `10`) |
 
 ## Usage
 
@@ -53,6 +55,23 @@ make docker-run
 make docker-run-detached
 make docker-kill-detached
 ```
+
+## Scoring
+
+In **deathmatch**, score mirrors the raw game score directly.
+
+In **skirmish**, score is an overall performance rating built from two sources:
+
+- **Raw game score** — points awarded by the game naturally for kills, assists, objectives, etc.
+- **Skirmish bonuses** — extra points awarded on top at the end of rounds and matches.
+
+**Round bonus** — awarded to the winning team at the end of every round, proportional to individual contribution that round. Amplified if the winning team was outnumbered.
+
+**Match win bonus** — awarded to the winning team at match end, based on performance across the *entire* match, not just the last round. A dominant victory is worth more than a close one. Being outnumbered amplifies it further.
+
+**Consolation bonus** — the losing team receives a small bonus at match end proportional to their overall match contribution.
+
+Players who contributed nothing in a round or match receive no bonus for it.
 
 ## Data
 
