@@ -72,8 +72,11 @@ func Start() {
 		log.Fatal(err)
 	}
 
-	skirmishTracker := game.NewSkirmishTracker(rconPool, config.Global.EventsChannel, config.Global.SkirmishWinCap)
-	deathmatchTracker := game.NewDeathmatchTracker()
+	weightProvider := game.NewScoreWeightProvider()
+	weightProvider.Refresh(appCtx)
+
+	skirmishTracker := game.NewSkirmishTracker(rconPool, config.Global.EventsChannel, config.Global.SkirmishWinCap, weightProvider)
+	deathmatchTracker := game.NewDeathmatchTracker(weightProvider)
 	gameRouter := game.NewGameRouter(rconPool, skirmishTracker, deathmatchTracker)
 
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {

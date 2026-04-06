@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 func UpsertPlayer(ctx context.Context, player Player) error {
@@ -157,10 +158,39 @@ func AddPlayerScore(ctx context.Context, playerID string, delta int) error {
 	return nil
 }
 
+func ReadPlayerScores(ctx context.Context, playerIDs []string) (map[string]int, error) {
+	if len(playerIDs) == 0 {
+		return make(map[string]int), nil
+	}
+	placeholders := make([]string, len(playerIDs))
+	args := make([]interface{}, len(playerIDs))
+	for i, id := range playerIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := fmt.Sprintf(`SELECT player_id, score FROM players WHERE player_id IN (%s)`,
+		strings.Join(placeholders, ","))
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.Join(DbPlayerReadError, err)
+	}
+	defer rows.Close()
+	result := make(map[string]int, len(playerIDs))
+	for rows.Next() {
+		var id string
+		var score int
+		if err := rows.Scan(&id, &score); err != nil {
+			return nil, errors.Join(DbPlayerReadError, err)
+		}
+		result[id] = score
+	}
+	return result, nil
+}
+
 func ReadAggregates(ctx context.Context) (*PlayerAggregates, error) {
 	var agg PlayerAggregates
-	err := db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(kills), 0), COALESCE(SUM(deaths), 0) FROM players`).
-		Scan(&agg.TotalPlayers, &agg.TotalKills, &agg.TotalDeaths)
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(kills), 0), COALESCE(SUM(deaths), 0), COALESCE(AVG(score), 0) FROM players`).
+		Scan(&agg.TotalPlayers, &agg.TotalKills, &agg.TotalDeaths, &agg.AvgScore)
 	if err != nil {
 		return nil, errors.Join(DbPlayerReadError, err)
 	}

@@ -48,6 +48,12 @@ func (r *GameRouter) OnTeamScore(ctx context.Context, dc *discordgo.Session, e *
 	}
 }
 
+func (r *GameRouter) OnKill(e *parse.KillfeedEvent) {
+	if r.active != nil {
+		r.active.OnKill(e)
+	}
+}
+
 func (r *GameRouter) resolveTracker() GameTrackerCompute {
 	var infoRaw string
 	err := r.pool.WithClient(context.Background(), func(client *rcon_client.ControlledClient) error {

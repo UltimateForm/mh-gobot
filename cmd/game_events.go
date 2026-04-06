@@ -70,6 +70,7 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 			go logEvent(dc, killfeedMsg(e))
 			go persistPlayer(parse.MapKilledFromKillfeed(*e))
 			go persistPlayer(parse.MapKillerFromKillfeed(*e))
+			tracker.OnKill(e)
 			if !e.IsAssist {
 				go func() {
 					if err := data.UpsertKillLedger(context.Background(), e.KillerID, e.KilledID); err != nil {

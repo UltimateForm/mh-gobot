@@ -11,4 +11,5 @@ type GameTrackerCompute interface {
 	OnMatchState(state string)
 	OnPlayerScore(e *parse.ScorefeedPlayerEvent)
 	OnTeamScore(ctx context.Context, dc *discordgo.Session, e *parse.ScorefeedTeamEvent)
+	OnKill(e *parse.KillfeedEvent)
 }

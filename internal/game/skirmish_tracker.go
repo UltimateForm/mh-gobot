@@ -12,7 +12,6 @@ import (
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/parse"
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
-	"github.com/UltimateForm/mh-gobot/internal/util"
 	"github.com/bwmarrin/discordgo"
 )
 
@@ -32,45 +31,55 @@ const (
 	skirmishInProgress
 )
 
+const killFactorFloor = 0.05
+
 type roundResult struct {
-	playerID string
-	username string
-	delta    float64
-	bonus    int
+	playerID   string
+	username   string
+	delta      float64
+	bonus      int
+	weight     float64
+	killFactor float64
 }
 
 type SkirmishTracker struct {
-	mu            sync.Mutex
-	state         skirmishState
-	roundDeltas   map[string]float64
-	matchDeltas   map[string]float64
-	teamScores    map[int]float64
-	winCap        float64
-	pool          *rcon_client.ConnectionPool
-	eventsChannel string
-	logger        *log.Logger
+	mu                sync.Mutex
+	state             skirmishState
+	roundDeltas       map[string]float64
+	matchDeltas       map[string]float64
+	roundEliminations map[string][]string
+	teamScores        map[int]float64
+	winCap            float64
+	pool              *rcon_client.ConnectionPool
+	eventsChannel     string
+	weightProvider    *ScoreWeightProvider
+	logger            *log.Logger
 }
 
-func NewSkirmishTracker(pool *rcon_client.ConnectionPool, eventsChannel string, winCap float64) *SkirmishTracker {
+func NewSkirmishTracker(pool *rcon_client.ConnectionPool, eventsChannel string, winCap float64, wp *ScoreWeightProvider) *SkirmishTracker {
 	return &SkirmishTracker{
-		state:         skirmishIdle,
-		roundDeltas:   make(map[string]float64),
-		matchDeltas:   make(map[string]float64),
-		teamScores:    make(map[int]float64),
-		winCap:        winCap,
-		pool:          pool,
-		eventsChannel: eventsChannel,
-		logger:        log.New(log.Default().Writer(), "[SkirmishTracker] ", log.Default().Flags()),
+		state:             skirmishIdle,
+		roundDeltas:       make(map[string]float64),
+		matchDeltas:       make(map[string]float64),
+		roundEliminations: make(map[string][]string),
+		teamScores:        make(map[int]float64),
+		winCap:         winCap,
+		pool:           pool,
+		eventsChannel:  eventsChannel,
+		weightProvider: wp,
+		logger:         log.New(log.Default().Writer(), "[SkirmishTracker] ", log.Default().Flags()),
 	}
 }
 
 func (t *SkirmishTracker) clearRound() {
 	t.roundDeltas = make(map[string]float64)
+	t.roundEliminations = make(map[string][]string)
 }
 
 func (t *SkirmishTracker) clearMatch() {
 	t.roundDeltas = make(map[string]float64)
 	t.matchDeltas = make(map[string]float64)
+	t.roundEliminations = make(map[string][]string)
 	t.teamScores = make(map[int]float64)
 }
 
@@ -96,7 +105,15 @@ func (t *SkirmishTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 		return
 	}
 	go func() {
-		if err := data.AddPlayerScore(context.Background(), e.PlayerID, int(e.ScoreChange)); err != nil {
+		ctx := context.Background()
+		player, err := data.ReadPlayer(ctx, e.PlayerID)
+		currentScore := 0
+		if err == nil {
+			currentScore = player.Score
+		}
+		weight := t.weightProvider.Weight(currentScore)
+		weightedDelta := int(math.Round(float64(e.ScoreChange) * weight))
+		if err := data.AddPlayerScore(ctx, e.PlayerID, weightedDelta); err != nil {
 			t.logger.Printf("failed to add raw score for %s: %v", e.PlayerID, err)
 		}
 	}()
@@ -105,6 +122,15 @@ func (t *SkirmishTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 	}
 	t.roundDeltas[e.PlayerID] += e.ScoreChange
 	t.matchDeltas[e.PlayerID] += e.ScoreChange
+}
+
+func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.state != skirmishInProgress {
+		return
+	}
+	t.roundEliminations[e.KillerID] = append(t.roundEliminations[e.KillerID], e.KilledID)
 }
 
 func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session, e *parse.ScorefeedTeamEvent) {
@@ -120,6 +146,7 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 
 	// snapshot and reset round state
 	roundSnapshot := t.roundDeltas
+	elimSnapshot := t.roundEliminations
 	t.clearRound()
 	t.teamScores[e.TeamID] = e.NewScore
 
@@ -187,15 +214,48 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 
 	roundNum := int(e.NewScore)
 
+	// batch-read current scores for weight and kill factor calculation
+	// include both scoreboard players and elimination victims
+	idSet := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		idSet[entry.PlayerID] = struct{}{}
+	}
+	for _, victims := range elimSnapshot {
+		for _, vid := range victims {
+			idSet[vid] = struct{}{}
+		}
+	}
+	allIDs := make([]string, 0, len(idSet))
+	for id := range idSet {
+		allIDs = append(allIDs, id)
+	}
+	playerScores, err := data.ReadPlayerScores(ctx, allIDs)
+	if err != nil {
+		t.logger.Printf("failed to read player scores for weighting: %v", err)
+		playerScores = make(map[string]int)
+	}
+
+	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
+
 	winResults := make([]roundResult, 0, len(winEntries))
 	for _, entry := range winEntries {
 		rd := roundSnapshot[entry.PlayerID]
-		bonus := rd * winMod * winSizeFactor
+		// kill factor: based on rank differential of eliminations
+		kf := 1.0
+		if victims := elimSnapshot[entry.PlayerID]; len(victims) > 0 {
+			sum := 0.0
+			for _, vid := range victims {
+				sum += (float64(playerScores[vid]) + avgK) / (float64(playerScores[entry.PlayerID]) + avgK)
+			}
+			kf = max(sum/float64(len(victims)), killFactorFloor)
+		}
+		bonus := rd * winMod * winSizeFactor * kf
 		if isMatchOver {
 			md := matchSnapshot[entry.PlayerID]
 			bonus += md * matchWinMod * winSizeFactor * scoreFactor
 		}
-		b := int(math.Round(bonus))
+		w := t.weightProvider.Weight(playerScores[entry.PlayerID])
+		b := int(math.Round(bonus * w))
 		if b <= 0 {
 			continue
 		}
@@ -210,26 +270,31 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		if isMatchOver {
 			displayDelta = matchSnapshot[entry.PlayerID]
 		}
-		winResults = append(winResults, roundResult{entry.PlayerID, entry.UserName, displayDelta, b})
+		winResults = append(winResults, roundResult{entry.PlayerID, entry.UserName, displayDelta, b, w, kf})
 	}
 
 	loseResults := make([]roundResult, 0)
 	if isMatchOver {
 		for _, entry := range loseEntries {
 			md := matchSnapshot[entry.PlayerID]
-			b := int(math.Round(md * matchLoseMod * loseSizeFactor))
+			w := t.weightProvider.Weight(playerScores[entry.PlayerID])
+			b := int(math.Round(md * matchLoseMod * loseSizeFactor * w))
 			if b <= 0 {
 				continue
 			}
 			if err := data.UpsertSkirmishWin(ctx, entry.PlayerID, b, 0, 0); err != nil {
 				t.logger.Printf("upsert consolation failed for %s: %v", entry.PlayerID, err)
 			}
-			loseResults = append(loseResults, roundResult{entry.PlayerID, entry.UserName, md, b})
+			loseResults = append(loseResults, roundResult{entry.PlayerID, entry.UserName, md, b, w, 1.0})
 		}
 	}
 
-	t.logger.Printf("round %d: %d win bonuses, %d consolations (win_sf=%.2f, lose_sf=%.2f, score_f=%.2f)",
-		roundNum, len(winResults), len(loseResults), winSizeFactor, loseSizeFactor, scoreFactor)
+	t.logger.Printf("round %d: %d win bonuses, %d consolations (win_sf=%.2f, lose_sf=%.2f, score_f=%.2f, K=%.0f)",
+		roundNum, len(winResults), len(loseResults), winSizeFactor, loseSizeFactor, scoreFactor, math.Max(t.weightProvider.AvgScore(), scoreWeightFloor))
+
+	if isMatchOver {
+		t.weightProvider.Refresh(ctx)
+	}
 
 	// go t.sayResults(ctx, winningTeam, isMatchOver, winResults, loseResults)
 
@@ -249,35 +314,6 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	}
 }
 
-func (t *SkirmishTracker) sayResults(ctx context.Context, winningTeam int, isMatchOver bool, winResults []roundResult, loseResults []roundResult) {
-	if t.pool == nil {
-		return
-	}
-	label := "round"
-	if isMatchOver {
-		label = "match"
-	}
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Team %d wins %s!", winningTeam, label))
-	for _, r := range winResults {
-		sb.WriteString(fmt.Sprintf("\n> +%d to %s", r.bonus, r.username))
-	}
-	if isMatchOver {
-		for _, r := range loseResults {
-			sb.WriteString(fmt.Sprintf("\n> +%d to %s (L)", r.bonus, r.username))
-		}
-	}
-	chunks := util.SplitChunks(sb.String(), 300)
-	t.pool.WithClient(ctx, func(c *rcon_client.ControlledClient) error {
-		for _, chunk := range chunks {
-			if _, err := c.Execute("say " + chunk); err != nil {
-				t.logger.Printf("say failed: %v", err)
-			}
-		}
-		return nil
-	})
-}
-
 func formatResultsTable(results []roundResult) string {
 	if len(results) == 0 {
 		return "No bonuses awarded"
@@ -286,10 +322,10 @@ func formatResultsTable(results []roundResult) string {
 	sb.WriteString("```\n")
 	for _, r := range results {
 		name := r.username
-		if len(name) > 18 {
-			name = name[:18]
+		if len(name) > 16 {
+			name = name[:16]
 		}
-		fmt.Fprintf(&sb, "%-18s Δ%+.0f → +%d\n", name, r.delta, r.bonus)
+		fmt.Fprintf(&sb, "%-16s Δ%+.0f w=%.2f kf=%.2f → +%d\n", name, r.delta, r.weight, r.killFactor, r.bonus)
 	}
 	sb.WriteString("```")
 	return sb.String()
@@ -310,6 +346,8 @@ func (t *SkirmishTracker) sendEmbed(
 	var title, description string
 	color := 0x57F287
 
+	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
+
 	if isMatchOver {
 		var losingScore float64
 		for teamID, score := range teamScores {
@@ -319,11 +357,11 @@ func (t *SkirmishTracker) sendEmbed(
 			}
 		}
 		title = fmt.Sprintf("🏆 Match over — Team %d wins!", winningTeam)
-		description = fmt.Sprintf("**Score:** %d – %.0f | **Size:** %.2f/%.2f | **Margin:** %.2f\n**Mods:** win=%.2f | consolation=%.2f",
-			roundNum, losingScore, winSizeFactor, loseSizeFactor, scoreFactor, matchWinMod, matchLoseMod)
+		description = fmt.Sprintf("**Score:** %d – %.0f | **Size:** %.2f/%.2f | **Margin:** %.2f\n**Mods:** win=%.2f | consolation=%.2f | **K:** %.0f",
+			roundNum, losingScore, winSizeFactor, loseSizeFactor, scoreFactor, matchWinMod, matchLoseMod, avgK)
 	} else {
 		title = fmt.Sprintf("⚔️ Round %d — Team %d wins", roundNum, winningTeam)
-		description = fmt.Sprintf("**Mod:** %.2f | **Team balance:** %.2f", winMod, winSizeFactor)
+		description = fmt.Sprintf("**Mod:** %.2f | **Team balance:** %.2f | **K:** %.0f", winMod, winSizeFactor, avgK)
 	}
 
 	fields := []*discordgo.MessageEmbedField{

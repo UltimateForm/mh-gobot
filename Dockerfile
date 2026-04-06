@@ -6,7 +6,10 @@ COPY . .
 RUN go build -o .out/mh-gobot .
 
 FROM alpine:latest
+RUN adduser -D -h /home/appuser appuser
 WORKDIR /app
 COPY --from=builder /app/.out/mh-gobot .
-RUN mkdir -p /root/.mh-gobot
+RUN mkdir -p /home/appuser/.mh-gobot
+RUN chown -R appuser:appuser /home/appuser/.mh-gobot
+USER appuser
 CMD ["./mh-gobot"]

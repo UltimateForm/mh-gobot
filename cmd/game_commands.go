@@ -69,7 +69,7 @@ func handleVersusGameCommand(ctx context.Context, event *parse.ChatEvent, args [
 		return err
 	}
 
-	return rconSay(ctx, fmt.Sprintf("%s vs %s: %d - %d", event.UserName, p2.Username, versus.AKills, versus.BKills))
+	return rconSay(ctx, fmt.Sprintf("%s %d - %d %s", event.UserName, versus.AKills, versus.BKills, p2.Username))
 }
 
 func handleRollGameCommand(ctx context.Context, event *parse.ChatEvent, args []string) error {

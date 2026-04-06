@@ -3,6 +3,7 @@ package game
 import (
 	"context"
 	"log"
+	"math"
 
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/parse"
@@ -10,22 +11,33 @@ import (
 )
 
 type DeathmatchTracker struct {
-	logger *log.Logger
+	weightProvider *ScoreWeightProvider
+	logger         *log.Logger
 }
 
-func NewDeathmatchTracker() *DeathmatchTracker {
+func NewDeathmatchTracker(wp *ScoreWeightProvider) *DeathmatchTracker {
 	return &DeathmatchTracker{
-		logger: log.New(log.Default().Writer(), "[DeathmatchTracker] ", log.Default().Flags()),
+		weightProvider: wp,
+		logger:         log.New(log.Default().Writer(), "[DeathmatchTracker] ", log.Default().Flags()),
 	}
 }
 
 func (t *DeathmatchTracker) OnMatchState(state string) {}
+func (t *DeathmatchTracker) OnKill(e *parse.KillfeedEvent)  {}
 
 func (t *DeathmatchTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 	if e.ScoreChange <= 0 {
 		return
 	}
-	if err := data.AddPlayerScore(context.Background(), e.PlayerID, int(e.ScoreChange)); err != nil {
+	ctx := context.Background()
+	player, err := data.ReadPlayer(ctx, e.PlayerID)
+	currentScore := 0
+	if err == nil {
+		currentScore = player.Score
+	}
+	weight := t.weightProvider.Weight(currentScore)
+	weightedDelta := int(math.Round(float64(e.ScoreChange) * weight))
+	if err := data.AddPlayerScore(ctx, e.PlayerID, weightedDelta); err != nil {
 		t.logger.Printf("failed to add score for %s: %v", e.PlayerID, err)
 	}
 }

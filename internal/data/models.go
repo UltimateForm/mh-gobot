@@ -28,4 +28,5 @@ type PlayerAggregates struct {
 	TotalPlayers int
 	TotalKills   int
 	TotalDeaths  int
+	AvgScore     float64
 }
