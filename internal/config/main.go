@@ -18,10 +18,12 @@ type dcConfig struct {
 }
 
 type rconConfig struct {
-	RconUri           string
-	RconPassword      string
-	GameCommandPrefix string
-	SkirmishWinCap    float64
+	RconUri            string
+	RconPassword       string
+	GameCommandPrefix  string
+	SkirmishWinCap     float64
+	SkirmishAltPopType int
+	ServerNameOverride string
 }
 
 type botConfig struct {
@@ -73,10 +75,12 @@ func init() {
 			LeaderboardsChannel: os.Getenv("LEADERBOARDS_CHANNEL"),
 		},
 		rconConfig: rconConfig{
-			RconUri:           fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),
-			RconPassword:      os.Getenv("RCON_PASSWORD"),
-			GameCommandPrefix: getEnvOrDefault("GAME_CMD_PREFIX", "!"),
-			SkirmishWinCap:    func() float64 { v, _ := strconv.ParseFloat(getEnvOrDefault("SKIRMISH_WIN_CAP", "10"), 64); return v }(),
+			RconUri:            fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),
+			RconPassword:       os.Getenv("RCON_PASSWORD"),
+			GameCommandPrefix:  getEnvOrDefault("GAME_CMD_PREFIX", "!"),
+			SkirmishWinCap:     func() float64 { v, _ := strconv.ParseFloat(getEnvOrDefault("SKIRMISH_WIN_CAP", "10"), 64); return v }(),
+			SkirmishAltPopType: func() int { v, _ := strconv.Atoi(os.Getenv("SKIRMISH_ALT_POP_TYPE")); return v }(),
+			ServerNameOverride: os.Getenv("SERVER_NAME_OVERRIDE"),
 		},
 	}
 }

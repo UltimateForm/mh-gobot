@@ -76,3 +76,5 @@ Players who contributed nothing in a round or match receive no bonus for it.
 ## Data
 
 Player stats are stored in `~/.mh-gobot/data.db` (SQLite). The database is created automatically on first run.
+
+Optional map art for the alternative skirmish pop embed (`SKIRMISH_ALT_POP_TYPE=1`) is loaded from `~/.mh-gobot/imgmap/{map}.{ext}`, where `{map}` matches the RCON map ID (e.g. `miniband`, `slope`, `yard`) and `{ext}` is any image extension (`webp`, `png`, `jpg`, `gif`). If no matching file is present, the embed renders without an image. Seed art is available in `.resources/imgmap/` in this repo.

@@ -15,8 +15,9 @@ import (
 // TODO: expand to support normal messages too, no reason to bind this forever to just embeds
 
 type RenderResult struct {
-	Embed *discordgo.MessageEmbed
-	Image io.Reader // optional, nil if no image
+	Embed     *discordgo.MessageEmbed
+	Image     io.Reader // optional, nil if no image
+	ImageName string    // optional attachment filename; defaults to "embed_image.png"
 }
 
 type PersistentEmbed struct {
@@ -53,14 +54,18 @@ func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t t
 		return
 	}
 	embed := result.Embed
+	imageName := result.ImageName
+	if imageName == "" {
+		imageName = "embed_image.png"
+	}
 	if result.Image != nil {
-		embed.Image = &discordgo.MessageEmbedImage{URL: "attachment://embed_image.png"}
+		embed.Image = &discordgo.MessageEmbedImage{URL: "attachment://" + imageName}
 	}
 	for k, v := range src.channels {
 		if v != "" {
 			edit := &discordgo.MessageEdit{Channel: k, ID: v, Embed: embed, Attachments: &[]*discordgo.MessageAttachment{}}
 			if result.Image != nil {
-				edit.Files = []*discordgo.File{{Name: "embed_image.png", Reader: result.Image}}
+				edit.Files = []*discordgo.File{{Name: imageName, Reader: result.Image}}
 			}
 			if _, err := dc.ChannelMessageEditComplex(edit); err != nil {
 				src.logger.Printf("failed to edit message: %v", err)
@@ -77,7 +82,7 @@ func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t t
 			}
 			send := &discordgo.MessageSend{Embed: embed}
 			if result.Image != nil {
-				send.Files = []*discordgo.File{{Name: "embed_image.png", Reader: result.Image}}
+				send.Files = []*discordgo.File{{Name: imageName, Reader: result.Image}}
 			}
 			msg, err := dc.ChannelMessageSendComplex(k, send)
 			if err != nil {

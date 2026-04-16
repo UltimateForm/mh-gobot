@@ -24,6 +24,7 @@ const (
 	GrokScoreboardRow   = `%{NOTSPACE:player_id}, %{DATA:user_name}, %{NUMBER:team_id}, %{NUMBER}, %{NUMBER:score}, %{NUMBER:kills}, %{NUMBER:deaths}, %{NUMBER:assists}`
 	GrokScorefeedPlayer = `Scorefeed: %{NOTSPACE:date}: %{NOTSPACE:player_id} \(%{DATA:user_name}\)'s score changed by %{NUMBER:score_change} points and is now %{NUMBER:new_score} points`
 	GrokScorefeedTeam   = `Scorefeed: %{NOTSPACE:date}: Team %{NUMBER:team_id}'s is now %{NUMBER:new_score} points from %{NUMBER:old_score} points`
+	GrokMatchDuration   = `There are %{NUMBER:seconds} seconds remaining\.`
 )
 
 var g *grok.Grok
@@ -196,6 +197,14 @@ func ParseScorefeedEvent(raw string) (*ScorefeedPlayerEvent, *ScorefeedTeamEvent
 	}
 	event, err := ParseScorefeedPlayerEvent(raw)
 	return event, nil, err
+}
+
+func ParseMatchDuration(raw string) (int, error) {
+	values, err := parseEvent(strings.TrimSpace(raw), GrokMatchDuration)
+	if err != nil || values == nil {
+		return 0, err
+	}
+	return strconv.Atoi(values["seconds"])
 }
 
 func ParseMatchstate(raw string) (string, error) {
