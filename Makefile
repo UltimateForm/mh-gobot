@@ -7,6 +7,14 @@ ENV_FILE=.env
 test:
 	go test ./...
 
+share-db:
+	podman unshare chown -R $(id -u):$(id -g) ~/.mh-gobot
+
+unshare-db:
+	podman unshare chown -R $(podman unshare id -u):$(podman unshare id -g) ~/.mh-gobot
+
+
+
 build:
 	go build -o .out/$(BINARY) .
 

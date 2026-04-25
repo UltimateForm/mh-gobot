@@ -11,11 +11,13 @@ import (
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/discord"
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
+	"github.com/UltimateForm/mh-gobot/internal/scribe"
 	"github.com/UltimateForm/mh-gobot/internal/util"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
+var scribeClient = scribe.NewClient()
 
 func errorEmbed(msg string) *discordgo.MessageEmbed {
 	return &discordgo.MessageEmbed{Title: "Error", Description: msg, Color: 0xFF0000}
@@ -119,8 +121,13 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Color: 0xFF0000,
 		}
 	} else {
+		scribeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		scribePlayer, _ := scribeClient.GetPlayer(scribeCtx, player.PlayerID)
+		cancel()
+
 		embed = &discordgo.MessageEmbed{
-			Title:       "🏆 Lifetime Score",
+			Title:       "🏆 Score",
+			URL:         fmt.Sprintf("https://mordhau-scribe.com/player/%s", player.PlayerID),
 			Description: fmt.Sprintf("```ansi\n%s — \u001b[33;1m%s pts\u001b[0m\n```", player.Username, util.HumanFormat(player.Score)),
 			Color:       0xF1C40F,
 			Fields: []*discordgo.MessageEmbedField{
@@ -131,6 +138,9 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Footer: &discordgo.MessageEmbedFooter{
 				Text: fmt.Sprintf("Player ID: %s", player.PlayerID),
 			},
+		}
+		if scribePlayer != nil && scribePlayer.AvatarURL != "" {
+			embed.Thumbnail = &discordgo.MessageEmbedThumbnail{URL: scribePlayer.AvatarURL}
 		}
 	}
 
