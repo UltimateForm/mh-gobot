@@ -10,6 +10,7 @@ import (
 
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/discord"
+	"github.com/UltimateForm/mh-gobot/internal/img"
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
 	"github.com/UltimateForm/mh-gobot/internal/scribe"
 	"github.com/UltimateForm/mh-gobot/internal/util"
@@ -18,6 +19,7 @@ import (
 )
 
 var scribeClient = scribe.NewClient()
+var avatarCache = img.NewAvatarCache(scribeClient)
 
 func errorEmbed(msg string) *discordgo.MessageEmbed {
 	return &discordgo.MessageEmbed{Title: "Error", Description: msg, Color: 0xFF0000}

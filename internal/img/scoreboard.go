@@ -16,6 +16,9 @@ import (
 //go:embed DejaVuSansMono.ttf
 var fontBytes []byte
 
+//go:embed LiberationMono-BoldItalic.ttf
+var fontBoldItalicBytes []byte
+
 func RenderScoreboardImage(entries []*parse.ScoreboardEntry, skirmish bool) (io.Reader, error) {
 	const (
 		imgW       = 600.0

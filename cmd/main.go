@@ -23,7 +23,6 @@ import (
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
 	"github.com/UltimateForm/mh-gobot/internal/util"
 	"github.com/bwmarrin/discordgo"
-	"github.com/jedib0t/go-pretty/v6/table"
 )
 
 var rconPool *rcon_client.ConnectionPool
@@ -111,30 +110,27 @@ func Start() {
 }
 
 func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
-	players, err := data.ReadTopPlayers(context.Background(), 20, data.TopCategory["score"])
+	ctx := context.Background()
+	players, err := data.ReadTopPlayers(ctx, 20, data.TopCategory["score"])
 	if err != nil {
 		return discord.RenderResult{}, err
 	}
 
-	tw := table.NewWriter()
-	tw.AppendHeader(table.Row{"#", "Player", "Score", "K", "D", "A"})
-	for _, p := range players {
-		tw.AppendRow(table.Row{p.Rank, p.Username, util.HumanFormat(p.Score), p.Kills, p.Deaths, p.Assists})
+	podiumIDs := make([]string, 0, 3)
+	for i := range min(len(players), 3) {
+		podiumIDs = append(podiumIDs, players[i].PlayerID)
 	}
-	tw.SetStyle(table.StyleLight)
-	tw.Style().Options.DrawBorder = false
-	tw.Style().Options.SeparateRows = false
+	avatars := avatarCache.GetMany(ctx, podiumIDs)
 
-	timestamp := fmt.Sprintf("🕒 Last updated: <t:%d:R>\n", t.Unix())
-	// len is wrong here, same inside TruncateCodeStringByLine but idc right now
-	// TODO: fix this lol
-	tableStr := util.TruncateCodeStringByLine(fmt.Sprintf("```\n%s\n```", tw.Render()), 4096-len(timestamp))
+	imgReader, err := img.RenderLeaderboardImage(players, avatars)
+	if err != nil {
+		return discord.RenderResult{}, err
+	}
+
 	return discord.RenderResult{
-		Embed: &discordgo.MessageEmbed{
-			Title:       "🏆 Score: Top 20",
-			Description: timestamp + tableStr,
-			Color:       0xF1C40F,
-		},
+		Content:   fmt.Sprintf("🏆 **Top 20** — updated <t:%d:R>", t.Unix()),
+		Image:     imgReader,
+		ImageName: "leaderboard.png",
 	}, nil
 }
 

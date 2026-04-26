@@ -12,14 +12,14 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// TODO: expand to support normal messages too, no reason to bind this forever to just embeds
-
 type RenderResult struct {
-	Embed     *discordgo.MessageEmbed
-	Image     io.Reader // optional, nil if no image
-	ImageName string    // optional attachment filename; defaults to "embed_image.png"
+	Content   string                  // optional plain-text content; used when Embed is nil
+	Embed     *discordgo.MessageEmbed // optional, when nil the message is sent without an embed wrapper
+	Image     io.Reader               // optional, nil if no image
+	ImageName string                  // optional attachment filename; defaults to "embed_image.png"
 }
 
+// TODO: consider different name as we are no longer doing just embeds
 type PersistentEmbed struct {
 	name     string
 	render   func(time.Time) (RenderResult, error)
@@ -58,12 +58,20 @@ func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t t
 	if imageName == "" {
 		imageName = "embed_image.png"
 	}
-	if result.Image != nil {
+	if result.Image != nil && embed != nil {
+		// embed images need a special placeholder wrapper so we prepare it here
 		embed.Image = &discordgo.MessageEmbedImage{URL: "attachment://" + imageName}
 	}
 	for k, v := range src.channels {
 		if v != "" {
-			edit := &discordgo.MessageEdit{Channel: k, ID: v, Embed: embed, Attachments: &[]*discordgo.MessageAttachment{}}
+			edit := &discordgo.MessageEdit{Channel: k, ID: v, Attachments: &[]*discordgo.MessageAttachment{}}
+			if embed != nil {
+				edit.Embed = embed
+			} else {
+				edit.Embeds = &[]*discordgo.MessageEmbed{}
+				content := result.Content
+				edit.Content = &content
+			}
 			if result.Image != nil {
 				edit.Files = []*discordgo.File{{Name: imageName, Reader: result.Image}}
 			}
@@ -80,7 +88,13 @@ func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t t
 					src.logger.Printf("failed to delete old message: %v", err)
 				}
 			}
-			send := &discordgo.MessageSend{Embed: embed}
+			send := &discordgo.MessageSend{}
+			if embed != nil {
+				send.Embed = embed
+			} else {
+				// kinda hoping we always got a content
+				send.Content = result.Content
+			}
 			if result.Image != nil {
 				send.Files = []*discordgo.File{{Name: imageName, Reader: result.Image}}
 			}
