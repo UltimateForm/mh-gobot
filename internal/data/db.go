@@ -67,4 +67,30 @@ func init() {
 	if err != nil {
 		logger.Fatal(err)
 	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS matches (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		game_mode   TEXT     NOT NULL,
+		map         TEXT,
+		started_at  DATETIME NOT NULL,
+		ended_at    DATETIME NOT NULL,
+		team1_score INTEGER  NOT NULL,
+		team2_score INTEGER  NOT NULL
+	)`)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS match_participants (
+		match_id   INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+		player_id  TEXT    NOT NULL,
+		team       INTEGER NOT NULL,
+		rounds_won INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (match_id, player_id)
+	)`)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_participants_player ON match_participants(player_id)`)
+	if err != nil {
+		logger.Fatal(err)
+	}
 }

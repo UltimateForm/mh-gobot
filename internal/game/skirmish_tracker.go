@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/parse"
@@ -42,6 +43,11 @@ type roundResult struct {
 	killFactor float64
 }
 
+type matchParticipant struct {
+	team      int
+	roundsWon int
+}
+
 type SkirmishTracker struct {
 	mu                sync.Mutex
 	state             skirmishState
@@ -49,6 +55,9 @@ type SkirmishTracker struct {
 	matchDeltas       map[string]float64
 	roundEliminations map[string][]string
 	teamScores        map[int]float64
+	matchParticipants map[string]*matchParticipant
+	matchStartedAt    time.Time
+	matchMap          string
 	winCap            float64
 	pool              *rcon_client.ConnectionPool
 	eventsChannel     string
@@ -63,11 +72,12 @@ func NewSkirmishTracker(pool *rcon_client.ConnectionPool, eventsChannel string, 
 		matchDeltas:       make(map[string]float64),
 		roundEliminations: make(map[string][]string),
 		teamScores:        make(map[int]float64),
-		winCap:         winCap,
-		pool:           pool,
-		eventsChannel:  eventsChannel,
-		weightProvider: wp,
-		logger:         log.New(log.Default().Writer(), "[SkirmishTracker] ", log.Default().Flags()),
+		matchParticipants: make(map[string]*matchParticipant),
+		winCap:            winCap,
+		pool:              pool,
+		eventsChannel:     eventsChannel,
+		weightProvider:    wp,
+		logger:            log.New(log.Default().Writer(), "[SkirmishTracker] ", log.Default().Flags()),
 	}
 }
 
@@ -81,21 +91,49 @@ func (t *SkirmishTracker) clearMatch() {
 	t.matchDeltas = make(map[string]float64)
 	t.roundEliminations = make(map[string][]string)
 	t.teamScores = make(map[int]float64)
+	t.matchParticipants = make(map[string]*matchParticipant)
+	t.matchStartedAt = time.Time{}
+	t.matchMap = ""
 }
 
 func (t *SkirmishTracker) OnMatchState(state string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	switch state {
 	case "In progress":
 		t.logger.Println("match started, resetting state")
 		t.clearMatch()
+		t.matchStartedAt = time.Now()
 		t.state = skirmishInProgress
+		t.mu.Unlock()
+		go t.captureMatchMap()
+		return
 	case "Leaving map":
 		t.logger.Println("leaving map, resetting state")
 		t.clearMatch()
 		t.state = skirmishIdle
 	}
+	t.mu.Unlock()
+}
+
+func (t *SkirmishTracker) captureMatchMap() {
+	var infoRaw string
+	err := t.pool.WithClient(context.Background(), func(client *rcon_client.ControlledClient) error {
+		var err error
+		infoRaw, err = client.Execute("info")
+		return err
+	})
+	if err != nil {
+		t.logger.Printf("failed to fetch info for map capture: %v", err)
+		return
+	}
+	info, err := parse.ParseServerInfo(infoRaw)
+	if err != nil {
+		t.logger.Printf("failed to parse server info for map capture: %v", err)
+		return
+	}
+	t.mu.Lock()
+	t.matchMap = info.Map
+	t.mu.Unlock()
 }
 
 func (t *SkirmishTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
@@ -190,6 +228,19 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		}
 	}
 	t.logger.Printf("round end: team %d wins, %d winners, %d losers on scoreboard", winningTeam, len(winEntries), len(loseEntries))
+
+	// track participants and increment round wins for winners
+	for _, entry := range winEntries {
+		if t.matchParticipants[entry.PlayerID] == nil {
+			t.matchParticipants[entry.PlayerID] = &matchParticipant{team: entry.TeamID}
+		}
+		t.matchParticipants[entry.PlayerID].roundsWon++
+	}
+	for _, entry := range loseEntries {
+		if t.matchParticipants[entry.PlayerID] == nil {
+			t.matchParticipants[entry.PlayerID] = &matchParticipant{team: entry.TeamID}
+		}
+	}
 
 	winSize := float64(len(winEntries))
 	loseSize := float64(len(loseEntries))
@@ -287,6 +338,30 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 			}
 			loseResults = append(loseResults, roundResult{entry.PlayerID, entry.UserName, md, b, w, 1.0})
 		}
+
+		// persist match to database
+		go func() {
+			matchCtx := context.Background()
+			participants := make([]data.MatchParticipant, 0, len(t.matchParticipants))
+			for playerID, mp := range t.matchParticipants {
+				participants = append(participants, data.MatchParticipant{
+					PlayerID:  playerID,
+					Team:      mp.team,
+					RoundsWon: mp.roundsWon,
+				})
+			}
+			match := data.Match{
+				GameMode:   "skirmish",
+				Map:        t.matchMap,
+				StartedAt:  t.matchStartedAt,
+				EndedAt:    time.Now(),
+				Team1Score: int(teamScoresCopy[1]),
+				Team2Score: int(teamScoresCopy[2]),
+			}
+			if _, err := data.InsertMatch(matchCtx, match, participants); err != nil {
+				t.logger.Printf("failed to insert match: %v", err)
+			}
+		}()
 	}
 
 	t.logger.Printf("round %d: %d win bonuses, %d consolations (win_sf=%.2f, lose_sf=%.2f, score_f=%.2f, K=%.0f)",

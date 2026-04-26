@@ -125,6 +125,9 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		scribePlayer, _ := scribeClient.GetPlayer(scribeCtx, player.PlayerID)
 		cancel()
 
+		matchesPlayed, _ := data.CountMatchesForPlayer(context.Background(), player.PlayerID)
+		matchesWon, _ := data.CountMatchesWonByPlayer(context.Background(), player.PlayerID)
+
 		embed = &discordgo.MessageEmbed{
 			Title:       "🏆 Score",
 			URL:         fmt.Sprintf("https://mordhau-scribe.com/player/%s", player.PlayerID),
@@ -134,6 +137,8 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				{Name: "⚔️ Kills", Value: fmt.Sprintf("```ansi\n\u001b[31;1m%d\u001b[0m\n```", player.Kills), Inline: true},
 				{Name: "🪦 Deaths", Value: fmt.Sprintf("```ansi\n\u001b[31m%d\u001b[0m\n```", player.Deaths), Inline: true},
 				{Name: "🤝 Assists", Value: fmt.Sprintf("```ansi\n\u001b[36m%d\u001b[0m\n```", player.Assists), Inline: true},
+				{Name: "🏅 Matches Won", Value: fmt.Sprintf("```ansi\n\u001b[32;1m%d\u001b[0m\n```", matchesWon), Inline: true},
+				{Name: "📊 Matches Played", Value: fmt.Sprintf("```\n%d\n```", matchesPlayed), Inline: true},
 			},
 			Footer: &discordgo.MessageEmbedFooter{
 				Text: fmt.Sprintf("Player ID: %s", player.PlayerID),

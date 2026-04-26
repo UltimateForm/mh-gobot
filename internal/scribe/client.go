@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	baseURL   = "https://api.mordhau-scribe.com:8443"
-	userAgent = "UltimateForm/ryard"
+	baseURL    = "https://api.mordhau-scribe.com:8443"
+	userAgent  = "UltimateForm/ryard"
 	defaultTTL = 8 * time.Hour
 )
 
@@ -48,6 +48,7 @@ func NewClient() *Client {
 }
 
 func (c *Client) GetPlayer(ctx context.Context, playFabID string) (*ScribePlayer, error) {
+	// fyi about ctx, the client has a static 10 secs timeout already
 	c.mu.RLock()
 	entry, ok := c.cache[playFabID]
 	c.mu.RUnlock()

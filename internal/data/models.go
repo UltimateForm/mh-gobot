@@ -1,5 +1,7 @@
 package data
 
+import "time"
+
 type Player struct {
 	PlayerID string
 	Username string
@@ -29,4 +31,21 @@ type PlayerAggregates struct {
 	TotalKills   int
 	TotalDeaths  int
 	AvgScore     float64
+}
+
+type Match struct {
+	ID         int64
+	GameMode   string
+	Map        string
+	StartedAt  time.Time
+	EndedAt    time.Time
+	Team1Score int
+	Team2Score int
+}
+
+type MatchParticipant struct {
+	MatchID   int64
+	PlayerID  string
+	Team      int
+	RoundsWon int
 }
