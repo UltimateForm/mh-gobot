@@ -12,7 +12,7 @@ import (
 var db *sql.DB
 var logger *log.Logger
 
-func init() {
+func Init() {
 	logger = log.New(log.Default().Writer(), "[DB] ", log.Default().Flags())
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -90,6 +90,14 @@ func init() {
 		logger.Fatal(err)
 	}
 	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_participants_player ON match_participants(player_id)`)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS rank_tiers (
+		score_gate INTEGER PRIMARY KEY,
+		name       TEXT    NOT NULL,
+		short_name TEXT
+	)`)
 	if err != nil {
 		logger.Fatal(err)
 	}

@@ -17,7 +17,7 @@ func UpsertPlayer(ctx context.Context, player Player) error {
 		return errors.Join(DbPlayerUpsertError, err)
 	}
 	defer tx.Rollback()
-	write, writeErr := tx.Exec(`INSERT INTO players (player_id, username, kills, deaths, assists, raw_score, score)
+	_, writeErr := tx.Exec(`INSERT INTO players (player_id, username, kills, deaths, assists, raw_score, score)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(player_id) DO UPDATE SET
     username  = excluded.username,
@@ -30,8 +30,8 @@ ON CONFLICT(player_id) DO UPDATE SET
 	if writeErr != nil {
 		return errors.Join(DbPlayerUpsertError, writeErr)
 	}
-	rowsAffected, _ := write.RowsAffected()
-	logger.Printf("player id %v mutation on %v rows", player.PlayerID, rowsAffected)
+	// rowsAffected, _ := write.RowsAffected()
+	// logger.Printf("player id %v mutation on %v rows", player.PlayerID, rowsAffected)
 	if err := tx.Commit(); err != nil {
 		return errors.Join(DbPlayerUpsertError, DbFailedToCommitDbTransaction, err)
 	}

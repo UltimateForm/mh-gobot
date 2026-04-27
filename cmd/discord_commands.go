@@ -10,6 +10,7 @@ import (
 
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/discord"
+	"github.com/UltimateForm/mh-gobot/internal/game"
 	"github.com/UltimateForm/mh-gobot/internal/img"
 	"github.com/UltimateForm/mh-gobot/internal/rcon_client"
 	"github.com/UltimateForm/mh-gobot/internal/scribe"
@@ -20,6 +21,7 @@ import (
 
 var scribeClient = scribe.NewClient()
 var avatarCache = img.NewAvatarCache(scribeClient)
+var rankTierProvider = game.NewRankTierProvider()
 
 func errorEmbed(msg string) *discordgo.MessageEmbed {
 	return &discordgo.MessageEmbed{Title: "Error", Description: msg, Color: 0xFF0000}
@@ -130,12 +132,26 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		matchesPlayed, _ := data.CountMatchesForPlayer(context.Background(), player.PlayerID)
 		matchesWon, _ := data.CountMatchesWonByPlayer(context.Background(), player.PlayerID)
 
+		currentTier, hasCurrent := rankTierProvider.Current(player.Score)
+		nextTier, hasNext := rankTierProvider.Next(player.Score)
+		rankValue := "Unranked"
+		if hasCurrent {
+			rankValue = currentTier.Name
+		}
+		nextValue := "[none]"
+		if hasNext {
+			nextValue = fmt.Sprintf("%s (%s pts)", nextTier.Name, util.HumanFormat(nextTier.ScoreGate-player.Score))
+		}
+
 		embed = &discordgo.MessageEmbed{
 			Title:       "🏆 Score",
 			URL:         fmt.Sprintf("https://mordhau-scribe.com/player/%s", player.PlayerID),
 			Description: fmt.Sprintf("```ansi\n%s — \u001b[33;1m%s pts\u001b[0m\n```", player.Username, util.HumanFormat(player.Score)),
 			Color:       0xF1C40F,
 			Fields: []*discordgo.MessageEmbedField{
+				{Name: "🎖️ Rank", Value: fmt.Sprintf("```\n%s\n```", rankValue), Inline: true},
+				{Name: "🎯 Next", Value: fmt.Sprintf("```\n%s\n```", nextValue), Inline: true},
+				{Name: "\u200b", Value: "\u200b", Inline: true},
 				{Name: "⚔️ Kills", Value: fmt.Sprintf("```ansi\n\u001b[31;1m%d\u001b[0m\n```", player.Kills), Inline: true},
 				{Name: "🪦 Deaths", Value: fmt.Sprintf("```ansi\n\u001b[31m%d\u001b[0m\n```", player.Deaths), Inline: true},
 				{Name: "🤝 Assists", Value: fmt.Sprintf("```ansi\n\u001b[36m%d\u001b[0m\n```", player.Assists), Inline: true},
@@ -388,6 +404,120 @@ func handlePlaceCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	})
 }
 
+func handleSetRankCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	options := i.ApplicationCommandData().Options
+	var scoreGate int64
+	var name, shortName string
+	for _, opt := range options {
+		switch opt.Name {
+		case "score_gate":
+			scoreGate = opt.IntValue()
+		case "name":
+			name = opt.StringValue()
+		case "short_name":
+			shortName = opt.StringValue()
+		}
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	ctx := context.Background()
+	tier := data.RankTier{ScoreGate: int(scoreGate), Name: name, ShortName: shortName}
+	if err := data.UpsertRankTier(ctx, tier); err != nil {
+		log.Printf("set_rank error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed("Failed to save rank tier")},
+		})
+		return
+	}
+	rankTierProvider.Refresh(ctx)
+
+	desc := fmt.Sprintf("**%s** at score gate **%d**", name, scoreGate)
+	if shortName != "" {
+		desc += fmt.Sprintf(" (short: `%s`)", shortName)
+	}
+	embed := &discordgo.MessageEmbed{
+		Title:       "🎖️ Rank tier saved",
+		Description: desc,
+		Color:       0x57F287,
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	})
+}
+
+func handleDelRankCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	scoreGate := i.ApplicationCommandData().Options[0].IntValue()
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	ctx := context.Background()
+	deleted, err := data.DeleteRankTier(ctx, int(scoreGate))
+	if err != nil {
+		log.Printf("del_rank error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed("Failed to delete rank tier")},
+		})
+		return
+	}
+	rankTierProvider.Refresh(ctx)
+
+	var embed *discordgo.MessageEmbed
+	if deleted {
+		embed = &discordgo.MessageEmbed{
+			Title:       "🗑️ Rank tier deleted",
+			Description: fmt.Sprintf("Removed gate **%d**", scoreGate),
+			Color:       0x57F287,
+		}
+	} else {
+		embed = &discordgo.MessageEmbed{
+			Title:       "Not Found",
+			Description: fmt.Sprintf("No rank tier at gate **%d**", scoreGate),
+			Color:       0x95A5A6,
+		}
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	})
+}
+
+func handleRanksCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	tiers := rankTierProvider.All()
+	var embed *discordgo.MessageEmbed
+	if len(tiers) == 0 {
+		embed = &discordgo.MessageEmbed{
+			Title:       "🎖️ Rank Tiers",
+			Description: "No rank tiers configured.",
+			Color:       0x95A5A6,
+		}
+	} else {
+		tw := table.NewWriter()
+		tw.AppendHeader(table.Row{"Score", "Rank", "Short"})
+		for _, t := range tiers {
+			tw.AppendRow(table.Row{util.HumanFormat(t.ScoreGate), t.Name, t.ShortName})
+		}
+		tw.SetStyle(table.StyleLight)
+		tw.Style().Options.DrawBorder = false
+		tw.Style().Options.SeparateRows = false
+		embed = &discordgo.MessageEmbed{
+			Title:       "🎖️ Rank Tiers",
+			Description: fmt.Sprintf("```\n%s\n```", tw.Render()),
+			Color:       0xF1C40F,
+		}
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	})
+}
+
 var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 	{
 		Definition: &discordgo.ApplicationCommand{
@@ -496,5 +626,56 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 			},
 		},
 		Handler: handleRconxCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "set_rank",
+			Description:              "Set or update a rank tier at a score gate",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionInteger,
+					Name:        "score_gate",
+					Description: "Minimum score required to reach this tier",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "name",
+					Description: "Rank name (e.g. Knight)",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "short_name",
+					Description: "Optional abbreviation",
+					Required:    false,
+				},
+			},
+		},
+		Handler: handleSetRankCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "del_rank",
+			Description:              "Delete a rank tier by its score gate",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionInteger,
+					Name:        "score_gate",
+					Description: "Score gate of the tier to remove",
+					Required:    true,
+				},
+			},
+		},
+		Handler: handleDelRankCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:        "ranks",
+			Description: "List all configured rank tiers",
+		},
+		Handler: handleRanksCommand,
 	},
 })

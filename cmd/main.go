@@ -29,6 +29,7 @@ var rconPool *rcon_client.ConnectionPool
 
 func Start() {
 	config.Global.Validate()
+	data.Init()
 	rconPool = rcon_client.NewPool(config.Global.RconUri, config.Global.RconPassword, 5, 60*time.Second)
 
 	dg, err := discord.Create()
@@ -76,6 +77,8 @@ func Start() {
 	weightProvider := game.NewScoreWeightProvider()
 	weightProvider.Refresh(appCtx)
 
+	rankTierProvider.Refresh(appCtx)
+
 	skirmishTracker := game.NewSkirmishTracker(rconPool, config.Global.EventsChannel, config.Global.SkirmishWinCap, weightProvider)
 	deathmatchTracker := game.NewDeathmatchTracker(weightProvider)
 	gameRouter := game.NewGameRouter(rconPool, skirmishTracker, deathmatchTracker)
@@ -122,7 +125,14 @@ func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 	}
 	avatars := avatarCache.GetMany(ctx, podiumIDs)
 
-	imgReader, err := img.RenderLeaderboardImage(players, avatars)
+	tierMap := make(map[string]data.RankTier)
+	for _, p := range players {
+		if tier, ok := rankTierProvider.Current(p.Score); ok {
+			tierMap[p.PlayerID] = tier
+		}
+	}
+
+	imgReader, err := img.RenderLeaderboardImage(players, avatars, tierMap)
 	if err != nil {
 		return discord.RenderResult{}, err
 	}

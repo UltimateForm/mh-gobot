@@ -49,3 +49,9 @@ type MatchParticipant struct {
 	Team      int
 	RoundsWon int
 }
+
+type RankTier struct {
+	ScoreGate int
+	Name      string
+	ShortName string
+}

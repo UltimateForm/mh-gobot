@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	leaderboardW         = 1024.0
+	leaderboardW         = 880.0
 	leaderboardPadX      = 8.0
 	leaderboardPadY      = 8.0
 	leaderboardHeaderH   = 36.0
@@ -35,17 +35,19 @@ type lbCol struct {
 
 var lbCols = []lbCol{
 	{"#", 0, true},
-	{"PLAYER", 160, false},
-	{"SCORE", 780, true},
-	{"K", 860, true},
-	{"D", 910, true},
-	{"A", 960, true},
+	{"PLAYER", 170, false},
+	{"SCORE", 640, true},
+	{"K", 720, true},
+	{"D", 770, true},
+	{"A", 820, true},
 }
 
 // RenderLeaderboardImage produces a PNG of the top-N leaderboard. The first
 // three entries get podium treatment with their avatars (from the avatars
 // map keyed by player_id). Missing avatars render as a plain rank chip.
-func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]image.Image) (io.Reader, error) {
+// tiers maps player_id to the player's current rank tier; nil entries (or
+// missing keys) render without a tier label.
+func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]image.Image, tiers map[string]data.RankTier) (io.Reader, error) {
 	podiumCount := min(len(entries), 3)
 	standardCount := len(entries) - podiumCount
 
@@ -68,6 +70,8 @@ func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]imag
 	baseFace := truetype.NewFace(fnt, &truetype.Options{Size: leaderboardBaseFont})
 	podiumFace := truetype.NewFace(fnt, &truetype.Options{Size: leaderboardPodiumFnt})
 	rankFace := truetype.NewFace(fnt, &truetype.Options{Size: leaderboardRankFnt})
+	tierStandardFace := truetype.NewFace(boldItalicFnt, &truetype.Options{Size: 12.0})
+	tierPodiumFace := truetype.NewFace(boldItalicFnt, &truetype.Options{Size: 14.0})
 	nameStandardFace := truetype.NewFace(boldItalicFnt, &truetype.Options{Size: leaderboardBaseFont})
 	namePodiumFace := truetype.NewFace(boldItalicFnt, &truetype.Options{Size: leaderboardPodiumFnt})
 
@@ -81,12 +85,14 @@ func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]imag
 
 	for i := range podiumCount {
 		cursorY += leaderboardPodiumGap / 2
-		drawPodiumRow(dc, cursorY, entries[i], avatars[entries[i].PlayerID], i, podiumFace, namePodiumFace, rankFace)
+		tier, hasTier := tiers[entries[i].PlayerID]
+		drawPodiumRow(dc, cursorY, entries[i], avatars[entries[i].PlayerID], tier, hasTier, i, podiumFace, namePodiumFace, rankFace, tierPodiumFace)
 		cursorY += leaderboardPodiumH + leaderboardPodiumGap/2
 	}
 
 	for i := podiumCount; i < len(entries); i++ {
-		drawStandardRow(dc, cursorY, entries[i], i-podiumCount, baseFace, nameStandardFace)
+		tier, hasTier := tiers[entries[i].PlayerID]
+		drawStandardRow(dc, cursorY, entries[i], tier, hasTier, i-podiumCount, baseFace, nameStandardFace, tierStandardFace)
 		cursorY += leaderboardRowH
 	}
 
@@ -114,7 +120,7 @@ func drawHeader(dc *gg.Context, face font.Face) {
 	}
 }
 
-func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar image.Image, idx int, podiumFace, nameFace, rankFace font.Face) {
+func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar image.Image, rank data.RankTier, hasRank bool, idx int, podiumFace, nameFace, rankFace, tierPodiumFace font.Face) {
 	dc.SetHexColor("#26282D")
 	dc.DrawRectangle(0, rowY, leaderboardW, leaderboardPodiumH)
 	dc.Fill()
@@ -145,8 +151,18 @@ func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar ima
 	dc.SetHexColor("#FFFFFF")
 	playerCol := lbCols[1]
 	playerX := leaderboardPadX + playerCol.x
-	name := truncateToWidth(dc, e.Username, 400)
-	dc.DrawStringAnchored(name, playerX, textY, 0, 0.5)
+	name := truncateToWidth(dc, e.Username, 480)
+	dc.DrawStringAnchored(name, playerX, textY-8, 0, 0.5)
+
+	if hasRank {
+		tierName := rank.ShortName
+		if tierName == "" {
+			tierName = rank.Name
+		}
+		dc.SetFontFace(tierPodiumFace)
+		dc.SetHexColor("#FFD700")
+		dc.DrawStringAnchored(tierName, playerX, textY+14, 0, 0.5)
+	}
 
 	dc.SetFontFace(podiumFace)
 	dc.SetHexColor("#FFD700")
@@ -166,7 +182,7 @@ func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar ima
 	}
 }
 
-func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, stripeIdx int, face, nameFace font.Face) {
+func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank data.RankTier, hasRank bool, stripeIdx int, face, nameFace, tierStandardFace font.Face) {
 	if stripeIdx%2 == 0 {
 		dc.SetHexColor("#2B2D31")
 	} else {
@@ -186,16 +202,31 @@ func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, stripeId
 		fmt.Sprintf("%d", e.Deaths),
 		fmt.Sprintf("%d", e.Assists),
 	}
+	playerX := leaderboardPadX + lbCols[1].x
+	var nameW float64
 	for j, c := range lbCols {
 		x := leaderboardPadX + c.x
 		if c.rightAlign {
 			dc.DrawStringAnchored(vals[j], x+28, textY, 1, 0.5)
 		} else {
 			dc.SetFontFace(nameFace)
-			name := truncateToWidth(dc, vals[j], 400)
+			name := truncateToWidth(dc, vals[j], 350)
+			if j == 1 {
+				nameW, _ = dc.MeasureString(name)
+			}
 			dc.DrawStringAnchored(name, x, textY, 0, 0.5)
 			dc.SetFontFace(face)
 		}
+	}
+
+	if hasRank {
+		tierName := rank.ShortName
+		if tierName == "" {
+			tierName = rank.Name
+		}
+		dc.SetFontFace(tierStandardFace)
+		dc.SetHexColor("#B5BAC1")
+		dc.DrawStringAnchored(tierName, playerX+nameW+8, textY, 0, 0.5)
 	}
 }
 
