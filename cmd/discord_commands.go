@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"time"
 
+	"github.com/UltimateForm/mh-gobot/internal/config"
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/discord"
 	"github.com/UltimateForm/mh-gobot/internal/game"
@@ -22,6 +24,7 @@ import (
 var scribeClient = scribe.NewClient()
 var avatarCache = img.NewAvatarCache(scribeClient)
 var rankTierProvider = game.NewRankTierProvider()
+var weightProvider = game.NewScoreWeightProvider()
 
 func errorEmbed(msg string) *discordgo.MessageEmbed {
 	return &discordgo.MessageEmbed{Title: "Error", Description: msg, Color: 0xFF0000}
@@ -383,9 +386,9 @@ func handlePlaceCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			var sb strings.Builder
 			for _, rp := range placement.Snippet {
 				if rp.PlayerID == player.PlayerID {
-					sb.WriteString(fmt.Sprintf("► #%-3d %-24s %s pts\n", rp.Rank, rp.Username, util.HumanFormat(rp.RawScore)))
+					sb.WriteString(fmt.Sprintf("► #%-3d %-24s %s pts\n", rp.Rank, rp.Username, util.HumanFormat(rp.Score)))
 				} else {
-					sb.WriteString(fmt.Sprintf("  #%-3d %-24s %s pts\n", rp.Rank, rp.Username, util.HumanFormat(rp.RawScore)))
+					sb.WriteString(fmt.Sprintf("  #%-3d %-24s %s pts\n", rp.Rank, rp.Username, util.HumanFormat(rp.Score)))
 				}
 			}
 			embed = &discordgo.MessageEmbed{
@@ -480,6 +483,104 @@ func handleDelRankCommand(s *discordgo.Session, i *discordgo.InteractionCreate) 
 			Color:       0x95A5A6,
 		}
 	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	})
+}
+
+func handleKCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	weightProvider.Refresh(context.Background())
+	avg := weightProvider.AvgScore()
+	floor := weightProvider.Floor()
+	k := weightProvider.K()
+
+	embed := &discordgo.MessageEmbed{
+		Title: "⚖️ Score Weight K",
+		Color: 0x3498DB,
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "K", Value: fmt.Sprintf("```\n%.0f\n```", k), Inline: true},
+			{Name: "Avg Score", Value: fmt.Sprintf("```\n%.0f\n```", avg), Inline: true},
+			{Name: "Floor", Value: fmt.Sprintf("```\n%.0f\n```", floor), Inline: true},
+		},
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	})
+}
+
+func handleSimLossCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	options := i.ApplicationCommandData().Options
+	var query string
+	sizeFactor := 1.0
+	for _, opt := range options {
+		switch opt.Name {
+		case "player":
+			query = opt.StringValue()
+		case "size_factor":
+			sizeFactor = opt.FloatValue()
+		}
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	if sizeFactor < 1.0 {
+		sizeFactor = 1.0
+	}
+
+	player, err := resolvePlayer(query)
+	var embed *discordgo.MessageEmbed
+	if errors.Is(err, data.DbPlayerNotFound) {
+		embed = notFoundEmbed(query)
+	} else if err != nil {
+		log.Printf("sim_loss command error: %v", err)
+		embed = errorEmbed("")
+	} else {
+		k := weightProvider.K()
+		calc := game.ComputeMatchLoss(
+			player.PlayerID,
+			player.Score,
+			k,
+			sizeFactor,
+			config.Global.MatchLossRatio,
+			config.Global.MatchLossMaxFactor,
+		)
+		const baseKillScore = 100
+		minKillsStr := "0"
+		if calc.ActualLoss > 0 {
+			minKills := int(math.Ceil(float64(calc.ActualLoss) / baseKillScore))
+			minKillsStr = fmt.Sprintf("%d", minKills)
+		}
+		ctx := context.Background()
+		rank, _ := data.ReadPlayerRank(ctx, player.PlayerID)
+		agg, _ := data.ReadAggregates(ctx)
+		placementStr := "?"
+		if rank > 0 && agg != nil && agg.TotalPlayers > 0 {
+			placementStr = fmt.Sprintf("%d/%d", rank, agg.TotalPlayers)
+		}
+		embed = &discordgo.MessageEmbed{
+			Title: "🔮 Match Loss Simulation",
+			Description: fmt.Sprintf("**%s** — %s pts (placement %s)\n**K:** %.0f | **ratio:** %.2f | **max factor:** %.2f | **size÷:** %.2f\n**base kill:** %d (flat, bonuses extra)",
+				player.Username, util.HumanFormat(player.Score), placementStr, k, config.Global.MatchLossRatio, config.Global.MatchLossMaxFactor, sizeFactor,
+				baseKillScore),
+			Color: 0xE67E22,
+			Fields: []*discordgo.MessageEmbedField{
+				{Name: "Base", Value: fmt.Sprintf("```\n%d\n```", calc.BaseAmount), Inline: true},
+				{Name: "Factor", Value: fmt.Sprintf("```\n%.2f\n```", calc.LossFactor), Inline: true},
+				{Name: "Raw Loss", Value: fmt.Sprintf("```\n%d\n```", calc.RawLoss), Inline: true},
+				{Name: "Actual Loss", Value: fmt.Sprintf("```ansi\n[31;1m-%d[0m\n```", calc.ActualLoss), Inline: true},
+				{Name: "Score After", Value: fmt.Sprintf("```\n%s\n```", util.HumanFormat(player.Score-calc.ActualLoss)), Inline: true},
+				{Name: "Min Kills to Cancel", Value: fmt.Sprintf("```\n%s\n```", minKillsStr), Inline: true},
+			},
+			Footer: &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("Player ID: %s", player.PlayerID)},
+		}
+	}
+
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 		Embeds: &[]*discordgo.MessageEmbed{embed},
 	})
@@ -677,5 +778,35 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 			Description: "List all configured rank tiers",
 		},
 		Handler: handleRanksCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "k",
+			Description:              "Show current score weight K (avg score floored)",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+		},
+		Handler: handleKCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "sim_loss",
+			Description:              "Simulate match loss for a player",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "player",
+					Description: "PlayFab ID or player name",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionNumber,
+					Name:        "size_factor",
+					Description: "Team imbalance divisor (>=1.0, default 1.0)",
+					Required:    false,
+				},
+			},
+		},
+		Handler: handleSimLossCommand,
 	},
 })

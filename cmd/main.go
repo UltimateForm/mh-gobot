@@ -74,7 +74,6 @@ func Start() {
 		log.Fatal(err)
 	}
 
-	weightProvider := game.NewScoreWeightProvider()
 	weightProvider.Refresh(appCtx)
 
 	rankTierProvider.Refresh(appCtx)

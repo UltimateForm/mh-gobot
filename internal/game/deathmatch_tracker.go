@@ -3,7 +3,6 @@ package game
 import (
 	"context"
 	"log"
-	"math"
 
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/parse"
@@ -30,14 +29,7 @@ func (t *DeathmatchTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 		return
 	}
 	ctx := context.Background()
-	player, err := data.ReadPlayer(ctx, e.PlayerID)
-	currentScore := 0
-	if err == nil {
-		currentScore = player.Score
-	}
-	weight := t.weightProvider.Weight(currentScore)
-	weightedDelta := int(math.Round(float64(e.ScoreChange) * weight))
-	if err := data.AddPlayerScore(ctx, e.PlayerID, weightedDelta); err != nil {
+	if err := data.AddPlayerScore(ctx, e.PlayerID, int(e.ScoreChange)); err != nil {
 		t.logger.Printf("failed to add score for %s: %v", e.PlayerID, err)
 	}
 }

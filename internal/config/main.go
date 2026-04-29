@@ -24,6 +24,8 @@ type rconConfig struct {
 	SkirmishWinCap     float64
 	SkirmishAltPopType int
 	ServerNameOverride string
+	MatchLossRatio     float64
+	MatchLossMaxFactor float64
 }
 
 type botConfig struct {
@@ -81,6 +83,8 @@ func init() {
 			SkirmishWinCap:     func() float64 { v, _ := strconv.ParseFloat(getEnvOrDefault("SKIRMISH_WIN_CAP", "10"), 64); return v }(),
 			SkirmishAltPopType: func() int { v, _ := strconv.Atoi(os.Getenv("SKIRMISH_ALT_POP_TYPE")); return v }(),
 			ServerNameOverride: os.Getenv("SERVER_NAME_OVERRIDE"),
+			MatchLossRatio:     func() float64 { v, _ := strconv.ParseFloat(getEnvOrDefault("MATCH_LOSS_RATIO", "0.25"), 64); return v }(),
+			MatchLossMaxFactor: func() float64 { v, _ := strconv.ParseFloat(getEnvOrDefault("MATCH_LOSS_MAX_FACTOR", "4.0"), 64); return v }(),
 		},
 	}
 }

@@ -53,3 +53,11 @@ func (p *ScoreWeightProvider) AvgScore() float64 {
 	defer p.mu.RUnlock()
 	return p.avgScore
 }
+
+func (p *ScoreWeightProvider) K() float64 {
+	return math.Max(p.AvgScore(), scoreWeightFloor)
+}
+
+func (p *ScoreWeightProvider) Floor() float64 {
+	return scoreWeightFloor
+}
