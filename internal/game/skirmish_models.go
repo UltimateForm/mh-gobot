@@ -1,20 +1,43 @@
 package game
 
-type SkirmishKDA struct {
-	Kills int `json:"kills"`
+type SkirmishPlayerPerformance struct {
+	Kills int
 	// Deaths expected to be 1 max per round
-	Deaths  int `json:"deaths"`
-	Assists int `json:"assists"`
-	Score   int `json:"score"`
+	Deaths  int
+	Assists int
+	// native + bonus
+	Score int
 }
 
 type SkirmishPlayer struct {
-	Rounds   map[int]SkirmishKDA `json:"rounds"`
-	PlayerId int                 `json:"player_id"`
-	Name     string              `json:"name"`
+	// key is match round number
+	Rounds           map[int]SkirmishPlayerPerformance
+	PlayerId         string
+	Name             string
+	Team             int
+	QuitAtRound      int
+	MatchResultScore int
+}
+
+func (p *SkirmishPlayer) AddRound(round int, perf SkirmishPlayerPerformance) {
+	p.Rounds[round] = perf
+}
+
+func (p *SkirmishPlayer) GetTotalScore() int {
+	totalPerRounds := 0
+	for _, perf := range p.Rounds {
+		totalPerRounds += perf.Score
+	}
+	return totalPerRounds + p.MatchResultScore
+}
+
+type SkirmishMatchRound struct {
+	Team1  []string
+	Team2  []string
+	Winner int
 }
 
 type SkirmishMatch struct {
-	Players []SkirmishPlayer `json:"players"`
-	Rounds  int              `json:"rounds"`
+	Rounds []SkirmishMatchRound
+	Winner int
 }

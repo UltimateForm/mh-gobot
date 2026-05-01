@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/UltimateForm/mh-gobot/internal/config"
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/discord"
 	"github.com/UltimateForm/mh-gobot/internal/game"
@@ -25,6 +24,7 @@ var scribeClient = scribe.NewClient()
 var avatarCache = img.NewAvatarCache(scribeClient)
 var rankTierProvider = game.NewRankTierProvider()
 var weightProvider = game.NewScoreWeightProvider()
+var gameConfig = game.NewGameConfig()
 
 func errorEmbed(msg string) *discordgo.MessageEmbed {
 	return &discordgo.MessageEmbed{Title: "Error", Description: msg, Color: 0xFF0000}
@@ -542,13 +542,15 @@ func handleSimLossCommand(s *discordgo.Session, i *discordgo.InteractionCreate) 
 		embed = errorEmbed("")
 	} else {
 		k := weightProvider.K()
+		lossRatio := gameConfig.Get(game.CfgMatchLossRatio)
+		lossFactorCap := gameConfig.Get(game.CfgMatchLossFactorCap)
 		calc := game.ComputeMatchLoss(
 			player.PlayerID,
 			player.Score,
 			k,
 			sizeFactor,
-			config.Global.MatchLossRatio,
-			config.Global.MatchLossMaxFactor,
+			lossRatio,
+			lossFactorCap,
 		)
 		const baseKillScore = 100
 		minKillsStr := "0"
@@ -566,7 +568,7 @@ func handleSimLossCommand(s *discordgo.Session, i *discordgo.InteractionCreate) 
 		embed = &discordgo.MessageEmbed{
 			Title: "🔮 Match Loss Simulation",
 			Description: fmt.Sprintf("**%s** — %s pts (placement %s)\n**K:** %.0f | **ratio:** %.2f | **max factor:** %.2f | **size÷:** %.2f\n**base kill:** %d (flat, bonuses extra)",
-				player.Username, util.HumanFormat(player.Score), placementStr, k, config.Global.MatchLossRatio, config.Global.MatchLossMaxFactor, sizeFactor,
+				player.Username, util.HumanFormat(player.Score), placementStr, k, lossRatio, lossFactorCap, sizeFactor,
 				baseKillScore),
 			Color: 0xE67E22,
 			Fields: []*discordgo.MessageEmbedField{
@@ -613,6 +615,78 @@ func handleRanksCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Description: fmt.Sprintf("```\n%s\n```", tw.Render()),
 			Color:       0xF1C40F,
 		}
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	})
+}
+
+var configKeys = []string{
+	game.CfgSkirmishRoundWinMod,
+	game.CfgSkirmishMatchWinMod,
+	game.CfgSkirmishSizeFactorCap,
+	game.CfgSkirmishWinCap,
+	game.CfgMatchLossRatio,
+	game.CfgMatchLossFactorCap,
+}
+
+func handleTunersGetCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	fields := make([]*discordgo.MessageEmbedField, 0, len(configKeys))
+	for _, k := range configKeys {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:  fmt.Sprintf("`%s` = %.4f", k, gameConfig.Get(k)),
+			Value: game.GameConfigDescriptions[k],
+		})
+	}
+
+	embed := &discordgo.MessageEmbed{
+		Title:  "⚙️ Game Tuners",
+		Color:  0x3498DB,
+		Fields: fields,
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	})
+}
+
+func handleTunersSetCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	options := i.ApplicationCommandData().Options
+	var key string
+	var value float64
+	for _, opt := range options {
+		switch opt.Name {
+		case "key":
+			key = opt.StringValue()
+		case "value":
+			value = opt.FloatValue()
+		}
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	oldValue := gameConfig.Get(key)
+	if err := gameConfig.Set(context.Background(), key, value); err != nil {
+		log.Printf("tuners_set error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed(err.Error())},
+		})
+		return
+	}
+
+	desc := fmt.Sprintf("**%s**: `%.4f` → `%.4f`\n\n%s", key, oldValue, value, game.GameConfigDescriptions[key])
+	if key == game.CfgSkirmishWinCap {
+		desc += "\n\n_Note: takes effect on next bot restart._"
+	}
+	embed := &discordgo.MessageEmbed{
+		Title:       "⚙️ Tuner Updated",
+		Description: desc,
+		Color:       0x57F287,
 	}
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 		Embeds: &[]*discordgo.MessageEmbed{embed},
@@ -786,6 +860,44 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
 		},
 		Handler: handleKCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "tuners_get",
+			Description:              "Show current game tuner values with descriptions",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+		},
+		Handler: handleTunersGetCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "tuners_set",
+			Description:              "Update a game tuner value (live, persisted in DB)",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "key",
+					Description: "Tuner key to update",
+					Required:    true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{Name: game.CfgSkirmishRoundWinMod, Value: game.CfgSkirmishRoundWinMod},
+						{Name: game.CfgSkirmishMatchWinMod, Value: game.CfgSkirmishMatchWinMod},
+						{Name: game.CfgSkirmishSizeFactorCap, Value: game.CfgSkirmishSizeFactorCap},
+						{Name: game.CfgSkirmishWinCap, Value: game.CfgSkirmishWinCap},
+						{Name: game.CfgMatchLossRatio, Value: game.CfgMatchLossRatio},
+						{Name: game.CfgMatchLossFactorCap, Value: game.CfgMatchLossFactorCap},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionNumber,
+					Name:        "value",
+					Description: "New numeric value",
+					Required:    true,
+				},
+			},
+		},
+		Handler: handleTunersSetCommand,
 	},
 	{
 		Definition: &discordgo.ApplicationCommand{

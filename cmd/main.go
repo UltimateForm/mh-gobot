@@ -78,7 +78,10 @@ func Start() {
 
 	rankTierProvider.Refresh(appCtx)
 
-	skirmishTracker := game.NewSkirmishTracker(rconPool, config.Global.EventsChannel, config.Global.SkirmishWinCap, weightProvider)
+	gameConfig.Seed(appCtx)
+	gameConfig.Refresh(appCtx)
+
+	skirmishTracker := game.NewSkirmishTracker(rconPool, config.Global.EventsChannel, gameConfig.Get(game.CfgSkirmishWinCap), weightProvider, gameConfig)
 	deathmatchTracker := game.NewDeathmatchTracker(weightProvider)
 	gameRouter := game.NewGameRouter(rconPool, skirmishTracker, deathmatchTracker)
 

@@ -101,4 +101,11 @@ func Init() {
 	if err != nil {
 		logger.Fatal(err)
 	}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS meta_numbers (
+		key   TEXT PRIMARY KEY,
+		value REAL NOT NULL
+	)`)
+	if err != nil {
+		logger.Fatal(err)
+	}
 }

@@ -6,14 +6,15 @@ import "math"
 // end-of-match point loss. Future work will persist these to a public
 // match-result log; keep the fields stable.
 type MatchLossCalc struct {
-	PlayerID      string
-	Username      string  // display only; not persisted by the future match log
-	LifetimeScore int     // pre-loss; reflects score after this match's per-kill bonuses
-	BaseAmount    int     // K * LossRatio
-	LossFactor    float64 // clamp(score/K, 0, MaxFactor)
-	SizeFactor    float64 // team-imbalance divisor (>= 1.0)
-	RawLoss       int     // base * factor / sizeFactor (pre-floor)
-	ActualLoss    int     // min(rawLoss, lifetimeScore) — what is actually subtracted
+	PlayerID           string
+	Username           string  // display only; not persisted by the future match log
+	LifetimeScore      int     // pre-loss; reflects score after this match's per-kill bonuses
+	BaseAmount         int     // K * LossRatio
+	LossFactor         float64 // clamp(score/K, 0, MaxFactor)
+	SizeFactor         float64 // team-imbalance divisor (>= 1.0)
+	RawLoss            int     // base * factor / sizeFactor (pre-floor)
+	ActualLoss         int     // min(rawLoss, lifetimeScore) — what is actually subtracted
+	ParticipationRatio float64 // display only; rounds present / total rounds
 }
 
 // ComputeMatchLoss returns the loss breakdown for a single losing player.
