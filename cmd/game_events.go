@@ -54,6 +54,13 @@ func chatMsg(e *parse.ChatEvent) string {
 	return fmt.Sprintf("💬 **[%s]** `%s` (%s): %s", e.Channel, e.UserName, e.PlayerID, msg)
 }
 
+func loginMsg(e *parse.LoginEvent) string {
+	if e.Instance == "out" {
+		return fmt.Sprintf("👋 **logout** `%s` (%s)", e.UserName, e.PlayerID)
+	}
+	return fmt.Sprintf("👋 **login** `%s` (%s)", e.UserName, e.PlayerID)
+}
+
 func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_client.ListenerClient, tracker game.GameTrackerCompute) {
 	for {
 		select {
@@ -81,6 +88,11 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 		case state := <-listener.MatchstateEvents:
 			go logEvent(dc, matchstateMsg(state))
 			tracker.OnMatchState(state)
+		case e := <-listener.LoginEvents:
+			go logEvent(dc, loginMsg(e))
+			if e.Instance == "out" {
+				tracker.OnPlayerLogout(ctx, e)
+			}
 		case e := <-listener.ChatEvents:
 			go gameCommandRegistry.Dispatch(ctx, e)
 			go logEvent(dc, chatMsg(e))

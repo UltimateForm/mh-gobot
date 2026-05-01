@@ -408,6 +408,72 @@ func (t *SkirmishTracker) OnPlayerDisconnect(playerID string) {
 	}
 }
 
+func (t *SkirmishTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEvent) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.state != skirmishInProgress {
+		return
+	}
+
+	player, ok := t.players[e.PlayerID]
+	if !ok {
+		return
+	}
+
+	// Check if team is losing
+	team1Score := t.teamScores[1]
+	team2Score := t.teamScores[2]
+	losingTeamID := 0
+
+	if team1Score < team2Score {
+		losingTeamID = 1
+	} else if team2Score < team1Score {
+		losingTeamID = 2
+	}
+
+	// If player's team is losing, apply match loss
+	if losingTeamID > 0 && player.Team == losingTeamID {
+		// Get player data for loss calculation
+		dbPlayer, err := data.ReadPlayer(ctx, e.PlayerID)
+		if err != nil {
+			return
+		}
+
+		// Count winning team players
+		winTeamID := 3 - losingTeamID
+		winSize := 0
+		for _, p := range t.players {
+			if p.Team == winTeamID {
+				winSize++
+			}
+		}
+
+		avgScoreK := t.weightProvider.K()
+		sizeFactor := math.Min(float64(winSize), t.gameConfig.Get(CfgSkirmishSizeFactorCap))
+
+		loss := ComputeMatchLoss(
+			e.PlayerID,
+			dbPlayer.Score,
+			avgScoreK,
+			sizeFactor,
+			t.gameConfig.Get(CfgMatchLossRatio),
+			t.gameConfig.Get(CfgMatchLossFactorCap),
+		)
+
+		// Apply the loss
+		if loss.ActualLoss != 0 {
+			err := data.AddPlayerScore(ctx, e.PlayerID, -loss.ActualLoss)
+			if err != nil {
+				t.logger.Printf("failed to apply match loss: %v", err)
+			}
+		}
+	}
+
+	// Remove player from tracking
+	delete(t.players, e.PlayerID)
+}
+
 func formatResultsTable(results []roundResult) string {
 	if len(results) == 0 {
 		return "No bonuses awarded"

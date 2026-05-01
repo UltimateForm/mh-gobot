@@ -60,6 +60,12 @@ func (r *GameRouter) OnPlayerDisconnect(playerID string) {
 	}
 }
 
+func (r *GameRouter) OnPlayerLogout(ctx context.Context, e *parse.LoginEvent) {
+	if r.active != nil {
+		r.active.OnPlayerLogout(ctx, e)
+	}
+}
+
 func (r *GameRouter) resolveTracker() GameTrackerCompute {
 	var infoRaw string
 	err := r.pool.WithClient(context.Background(), func(client *rcon_client.ControlledClient) error {

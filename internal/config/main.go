@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -15,6 +16,7 @@ type dcConfig struct {
 	PopChannel          string
 	EventsChannel       string
 	LeaderboardsChannel string
+	KnownServers        []string
 }
 
 type rconConfig struct {
@@ -67,12 +69,22 @@ func init() {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Fatal(errors.Join(errors.New("failed to load bot config"), err))
 	}
+	knownServersStr := os.Getenv("KNOWN_SERVERS")
+	knownServers := []string{}
+	if knownServersStr != "" {
+		knownServers = strings.Split(knownServersStr, ",")
+		for i := range knownServers {
+			knownServers[i] = strings.TrimSpace(knownServers[i])
+		}
+	}
+
 	Global = botConfig{
 		dcConfig: dcConfig{
 			DcToken:             os.Getenv("DC_TOKEN"),
 			PopChannel:          os.Getenv("POP_CHANNEL"),
 			EventsChannel:       os.Getenv("EVENTS_CHANNEL"),
 			LeaderboardsChannel: os.Getenv("LEADERBOARDS_CHANNEL"),
+			KnownServers:        knownServers,
 		},
 		rconConfig: rconConfig{
 			RconUri:            fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),

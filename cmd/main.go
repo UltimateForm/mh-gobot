@@ -65,6 +65,7 @@ func Start() {
 		config.Global.RconUri,
 		config.Global.RconPassword,
 		[]rcon_client.ListenType{
+			rcon_client.ListenLogin,
 			rcon_client.ListenChat,
 			rcon_client.ListenKillfeed,
 			rcon_client.ListenScorefeed,
