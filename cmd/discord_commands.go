@@ -23,6 +23,7 @@ import (
 var scribeClient = scribe.NewClient()
 var avatarCache = img.NewAvatarCache(scribeClient)
 var rankTierProvider = game.NewRankTierProvider()
+var rankIconCache *img.RankIconCache
 var weightProvider = game.NewScoreWeightProvider()
 var gameConfig = game.NewGameConfig()
 

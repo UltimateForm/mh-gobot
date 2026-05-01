@@ -30,6 +30,7 @@ var rconPool *rcon_client.ConnectionPool
 func Start() {
 	config.Global.Validate()
 	data.Init()
+	rankIconCache = img.NewRankIconCache()
 	rconPool = rcon_client.NewPool(config.Global.RconUri, config.Global.RconPassword, 5, 60*time.Second)
 
 	dg, err := discord.Create()
@@ -134,7 +135,7 @@ func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 		}
 	}
 
-	imgReader, err := img.RenderLeaderboardImage(players, avatars, tierMap)
+	imgReader, err := img.RenderLeaderboardImage(players, avatars, tierMap, rankIconCache)
 	if err != nil {
 		return discord.RenderResult{}, err
 	}

@@ -2,16 +2,16 @@ BINARY=mh-gobot
 IMAGE=mh-gobot
 ENV_FILE=.env
 
-.PHONY: test build run watch-cons docker-build docker-run docker-run-detached docker-kill-detached
+.PHONY: test build run watch-cons docker-build docker-run docker-run-detached docker-kill-detached gen-leaderboard
 
 test:
 	go test ./...
 
 share-db:
-	podman unshare chown -R $(id -u):$(id -g) ~/.mh-gobot
+	podman unshare chown -R $$(id -u):$$(id -g) ~/.mh-gobot
 
 unshare-db:
-	podman unshare chown -R $(podman unshare id -u):$(podman unshare id -g) ~/.mh-gobot
+	podman unshare chown -R $$(id -u):$$(id -g) ~/.mh-gobot
 
 
 
@@ -35,3 +35,6 @@ docker-run-detached: docker-kill-detached
 
 docker-kill-detached:
 	docker rm -f $(IMAGE) 2>/dev/null || true
+
+gen-leaderboard:
+	go run ./tools/leaderboardgen -o leaderboard.png

@@ -11,6 +11,7 @@ import (
 	"github.com/UltimateForm/mh-gobot/internal/util"
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
+	"golang.org/x/image/draw"
 	"golang.org/x/image/font"
 )
 
@@ -25,6 +26,7 @@ const (
 	leaderboardBaseFont  = 14.0
 	leaderboardPodiumFnt = 20.0
 	leaderboardRankFnt   = 22.0
+	showRankNames        = false
 )
 
 type lbCol struct {
@@ -35,6 +37,7 @@ type lbCol struct {
 
 var lbCols = []lbCol{
 	{"#", 0, true},
+	{"RANK", 114, false},
 	{"PLAYER", 170, false},
 	{"SCORE", 640, true},
 	{"K", 720, true},
@@ -46,8 +49,8 @@ var lbCols = []lbCol{
 // three entries get podium treatment with their avatars (from the avatars
 // map keyed by player_id). Missing avatars render as a plain rank chip.
 // tiers maps player_id to the player's current rank tier; nil entries (or
-// missing keys) render without a tier label.
-func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]image.Image, tiers map[string]data.RankTier) (io.Reader, error) {
+// missing keys) render without a tier label. rankIcons provides rank icon images.
+func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]image.Image, tiers map[string]data.RankTier, rankIcons *RankIconCache) (io.Reader, error) {
 	podiumCount := min(len(entries), 3)
 	standardCount := len(entries) - podiumCount
 
@@ -81,18 +84,23 @@ func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]imag
 
 	drawHeader(dc, baseFace)
 
+	// Calculate rank icon center x position for alignment
+	playerX := leaderboardPadX + lbCols[2].x
+	badgeEndX := leaderboardPadX + 28.0 + 22.0 + 8.0
+	rankIconCenterX := (badgeEndX + playerX) / 2
+
 	cursorY := leaderboardPadY + leaderboardHeaderH
 
 	for i := range podiumCount {
 		cursorY += leaderboardPodiumGap / 2
 		tier, hasTier := tiers[entries[i].PlayerID]
-		drawPodiumRow(dc, cursorY, entries[i], avatars[entries[i].PlayerID], tier, hasTier, i, podiumFace, namePodiumFace, rankFace, tierPodiumFace)
+		drawPodiumRow(dc, cursorY, entries[i], avatars[entries[i].PlayerID], tier, hasTier, i, podiumFace, namePodiumFace, rankFace, tierPodiumFace, rankIcons, rankIconCenterX)
 		cursorY += leaderboardPodiumH + leaderboardPodiumGap/2
 	}
 
 	for i := podiumCount; i < len(entries); i++ {
 		tier, hasTier := tiers[entries[i].PlayerID]
-		drawStandardRow(dc, cursorY, entries[i], tier, hasTier, i-podiumCount, baseFace, nameStandardFace, tierStandardFace)
+		drawStandardRow(dc, cursorY, entries[i], tier, hasTier, i-podiumCount, baseFace, nameStandardFace, tierStandardFace, rankIcons, rankIconCenterX)
 		cursorY += leaderboardRowH
 	}
 
@@ -112,7 +120,9 @@ func drawHeader(dc *gg.Context, face font.Face) {
 	for _, c := range lbCols {
 		x := leaderboardPadX + c.x
 		y := leaderboardPadY + (leaderboardHeaderH / 2) - 2
-		if c.rightAlign {
+		if c.label == "RANK" {
+			dc.DrawStringAnchored(c.label, x, y, 0.5, 0.5)
+		} else if c.rightAlign {
 			dc.DrawStringAnchored(c.label, x+28, y, 1, 0.5)
 		} else {
 			dc.DrawStringAnchored(c.label, x, y, 0, 0.5)
@@ -120,7 +130,7 @@ func drawHeader(dc *gg.Context, face font.Face) {
 	}
 }
 
-func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar image.Image, rank data.RankTier, hasRank bool, idx int, podiumFace, nameFace, rankFace, tierPodiumFace font.Face) {
+func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar image.Image, rank data.RankTier, hasRank bool, idx int, podiumFace, nameFace, rankFace, tierPodiumFace font.Face, rankIcons *RankIconCache, rankIconCenterX float64) {
 	dc.SetHexColor("#26282D")
 	dc.DrawRectangle(0, rowY, leaderboardW, leaderboardPodiumH)
 	dc.Fill()
@@ -138,35 +148,46 @@ func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar ima
 	dc.SetHexColor("#1E1F22")
 	dc.DrawStringAnchored(fmt.Sprintf("%d", e.Rank), chipCX, chipCY-2, 0.5, 0.5)
 
-	// avatar slot
-	avatarSlotX := chipCX + chipR + 8
+	// rank icon - centered at the predetermined center x position
+	rankIconSize := 70.0
+	rankIconX := rankIconCenterX - (rankIconSize / 2)
+	rankIconY := rowY + (leaderboardPodiumH-rankIconSize)/2
+	if hasRank && rankIcons != nil {
+		rankIcon := rankIcons.Get(rank.Name)
+		if rankIcon != nil {
+			drawRankIcon(dc, rankIcon, rankIconX, rankIconY, rankIconSize)
+		}
+	}
+
+	// avatar slot - aligned with below-top-3 player names
+	playerX := leaderboardPadX + lbCols[2].x
+	avatarSlotX := playerX
 	avatarSlotY := rowY + (leaderboardPodiumH-avatarSize)/2
 	if avatar != nil {
 		dc.DrawImage(avatar, int(avatarSlotX), int(avatarSlotY))
 	}
 
 	textY := rowY + leaderboardPodiumH/2
+	nameX := playerX + avatarSize + 12
 
 	dc.SetFontFace(nameFace)
 	dc.SetHexColor("#FFFFFF")
-	playerCol := lbCols[1]
-	playerX := leaderboardPadX + playerCol.x
-	name := truncateToWidth(dc, e.Username, 480)
-	dc.DrawStringAnchored(name, playerX, textY-8, 0, 0.5)
+	name := truncateToWidth(dc, e.Username, 400)
+	dc.DrawStringAnchored(name, nameX, textY-8, 0, 0.5)
 
-	if hasRank {
+	if hasRank && showRankNames {
 		tierName := rank.ShortName
 		if tierName == "" {
 			tierName = rank.Name
 		}
 		dc.SetFontFace(tierPodiumFace)
 		dc.SetHexColor("#FFD700")
-		dc.DrawStringAnchored(tierName, playerX, textY+14, 0, 0.5)
+		dc.DrawStringAnchored(tierName, nameX, textY+14, 0, 0.5)
 	}
 
 	dc.SetFontFace(podiumFace)
 	dc.SetHexColor("#FFD700")
-	scoreCol := lbCols[2]
+	scoreCol := lbCols[3]
 	dc.DrawStringAnchored(util.HumanFormat(e.Score), leaderboardPadX+scoreCol.x+28, textY, 1, 0.5)
 
 	dc.SetHexColor("#DBDEE1")
@@ -174,15 +195,15 @@ func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar ima
 		col lbCol
 		val int
 	}{
-		{lbCols[3], e.Kills},
-		{lbCols[4], e.Deaths},
-		{lbCols[5], e.Assists},
+		{lbCols[4], e.Kills},
+		{lbCols[5], e.Deaths},
+		{lbCols[6], e.Assists},
 	} {
 		dc.DrawStringAnchored(fmt.Sprintf("%d", pair.val), leaderboardPadX+pair.col.x+28, textY, 1, 0.5)
 	}
 }
 
-func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank data.RankTier, hasRank bool, stripeIdx int, face, nameFace, tierStandardFace font.Face) {
+func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank data.RankTier, hasRank bool, stripeIdx int, face, nameFace, tierStandardFace font.Face, rankIcons *RankIconCache, rankIconCenterX float64) {
 	if stripeIdx%2 == 0 {
 		dc.SetHexColor("#2B2D31")
 	} else {
@@ -196,14 +217,27 @@ func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank dat
 	textY := rowY + (leaderboardRowH / 2) - 2
 	vals := []string{
 		fmt.Sprintf("%d", e.Rank),
+		"",  // RANK column - icon drawn separately
 		e.Username,
 		util.HumanFormat(e.Score),
 		fmt.Sprintf("%d", e.Kills),
 		fmt.Sprintf("%d", e.Deaths),
 		fmt.Sprintf("%d", e.Assists),
 	}
-	playerX := leaderboardPadX + lbCols[1].x
+	playerX := leaderboardPadX + lbCols[2].x
 	var nameW float64
+
+	// Draw rank icon aligned with top-3 icons
+	rankIconSize := 24.0
+	rankIconX := rankIconCenterX - (rankIconSize / 2)
+	rankIconY := rowY + (leaderboardRowH-rankIconSize)/2
+	if hasRank && rankIcons != nil {
+		rankIcon := rankIcons.Get(rank.Name)
+		if rankIcon != nil {
+			drawRankIcon(dc, rankIcon, rankIconX, rankIconY, rankIconSize)
+		}
+	}
+
 	for j, c := range lbCols {
 		x := leaderboardPadX + c.x
 		if c.rightAlign {
@@ -211,7 +245,7 @@ func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank dat
 		} else {
 			dc.SetFontFace(nameFace)
 			name := truncateToWidth(dc, vals[j], 350)
-			if j == 1 {
+			if j == 2 {
 				nameW, _ = dc.MeasureString(name)
 			}
 			dc.DrawStringAnchored(name, x, textY, 0, 0.5)
@@ -219,7 +253,7 @@ func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank dat
 		}
 	}
 
-	if hasRank {
+	if hasRank && showRankNames {
 		tierName := rank.ShortName
 		if tierName == "" {
 			tierName = rank.Name
@@ -238,4 +272,10 @@ func truncateToWidth(dc *gg.Context, s string, maxW float64) string {
 		}
 		s = s[:len(s)-1]
 	}
+}
+
+func drawRankIcon(dc *gg.Context, icon image.Image, x, y, size float64) {
+	scaled := image.NewRGBA(image.Rect(0, 0, int(size), int(size)))
+	draw.BiLinear.Scale(scaled, scaled.Bounds(), icon, icon.Bounds(), draw.Over, nil)
+	dc.DrawImage(scaled, int(x), int(y))
 }
