@@ -16,6 +16,7 @@ type SkirmishPlayer struct {
 	Team             int
 	QuitAtRound      int
 	MatchResultScore int
+	TeamSwitched     bool
 }
 
 func (p *SkirmishPlayer) AddRound(round int, perf SkirmishPlayerPerformance) {
@@ -28,6 +29,37 @@ func (p *SkirmishPlayer) GetTotalScore() int {
 		totalPerRounds += perf.Score
 	}
 	return totalPerRounds + p.MatchResultScore
+}
+
+func (p *SkirmishPlayer) GetTotalKills() int {
+	total := 0
+	for _, perf := range p.Rounds {
+		total += perf.Kills
+	}
+	return total
+}
+
+func (p *SkirmishPlayer) GetTotalDeaths() int {
+	total := 0
+	for _, perf := range p.Rounds {
+		total += perf.Deaths
+	}
+	return total
+}
+
+func (p *SkirmishPlayer) GetTotalAssists() int {
+	total := 0
+	for _, perf := range p.Rounds {
+		total += perf.Assists
+	}
+	return total
+}
+
+func (p *SkirmishPlayer) GetParticipationRatio(totalRounds int) float64 {
+	if totalRounds == 0 {
+		return 0
+	}
+	return float64(len(p.Rounds)) / float64(totalRounds)
 }
 
 type SkirmishMatchRound struct {

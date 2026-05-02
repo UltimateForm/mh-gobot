@@ -27,7 +27,7 @@ const (
 	avatarMaxBodyBytes = 2 * 1024 * 1024
 	avatarSuccessTTL   = 8 * time.Hour
 	avatarNegativeTTL  = 10 * time.Minute
-	avatarFetchTimeout = 3 * time.Second
+	avatarFetchTimeout = 10 * time.Second
 )
 
 type avatarEntry struct {

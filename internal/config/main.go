@@ -15,6 +15,7 @@ type dcConfig struct {
 	DcToken             string
 	PopChannel          string
 	EventsChannel       string
+	PublicEventsChannel string
 	LeaderboardsChannel string
 	KnownServers        []string
 }
@@ -43,6 +44,9 @@ func (src *botConfig) Validate() {
 	}
 	if src.EventsChannel == "" {
 		log.Println("warning: missing events channel, event messages will be disabled")
+	}
+	if src.PublicEventsChannel == "" {
+		log.Println("warning: missing public events channel, public match end messages will be disabled")
 	}
 	if src.LeaderboardsChannel == "" {
 		log.Println("warning: missing leaderboards channel, leaderboard embed will be disabled")
@@ -83,6 +87,7 @@ func init() {
 			DcToken:             os.Getenv("DC_TOKEN"),
 			PopChannel:          os.Getenv("POP_CHANNEL"),
 			EventsChannel:       os.Getenv("EVENTS_CHANNEL"),
+			PublicEventsChannel: os.Getenv("PUBLIC_EVENTS_CHANNEL"),
 			LeaderboardsChannel: os.Getenv("LEADERBOARDS_CHANNEL"),
 			KnownServers:        knownServers,
 		},

@@ -17,6 +17,16 @@ type MatchLossCalc struct {
 	ParticipationRatio float64 // display only; rounds present / total rounds
 }
 
+// MatchLossSizeFactor returns the sympathy divisor passed to ComputeMatchLoss:
+// winSize / loseSize. Values > 1 mean the losing team was outnumbered and the
+// loss is reduced proportionally. Returns 1.0 if loseSize == 0.
+func MatchLossSizeFactor(winSize, loseSize int) float64 {
+	if loseSize == 0 {
+		return 1.0
+	}
+	return float64(winSize) / float64(loseSize)
+}
+
 // ComputeMatchLoss returns the loss breakdown for a single losing player.
 // Pure function: no DB, no embed, no side-effects. Caller is responsible
 // for applying ActualLoss to the persisted score.

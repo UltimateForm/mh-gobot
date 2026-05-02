@@ -33,36 +33,55 @@ type roundResult struct {
 	killFactor float64
 }
 
-type SkirmishTracker struct {
-	mu             sync.Mutex
-	state          skirmishState
-	currentRound   int
-	players        map[string]*SkirmishPlayer
-	teamScores     map[int]float64
-	matchRounds    []SkirmishMatchRound
-	matchStartedAt time.Time
-	matchMap       string
-	winCap         float64
-	pool           *rcon_client.ConnectionPool
-	eventsChannel  string
-	weightProvider *ScoreWeightProvider
-	gameConfig     *GameConfig
-	logger         *log.Logger
+type matchWinResult struct {
+	playerID string
+	username string
+	bonus    int
+	share    float64
 }
 
-func NewSkirmishTracker(pool *rcon_client.ConnectionPool, eventsChannel string, winCap float64, wp *ScoreWeightProvider, gc *GameConfig) *SkirmishTracker {
+type quitterRecord struct {
+	playerID  string
+	username  string
+	team      int
+	quitRound int
+	penalty   int
+}
+
+type SkirmishTracker struct {
+	mu                  sync.Mutex
+	state               skirmishState
+	currentRound        int
+	players             map[string]*SkirmishPlayer
+	teamScores          map[int]float64
+	matchRounds         []SkirmishMatchRound
+	matchStartedAt      time.Time
+	matchMap            string
+	winCap              float64
+	pool                *rcon_client.ConnectionPool
+	eventsChannel       string
+	publicEventsChannel string
+	weightProvider      *ScoreWeightProvider
+	gameConfig          *GameConfig
+	logger              *log.Logger
+	quitters            []quitterRecord
+}
+
+func NewSkirmishTracker(pool *rcon_client.ConnectionPool, eventsChannel string, publicEventsChannel string, winCap float64, wp *ScoreWeightProvider, gc *GameConfig) *SkirmishTracker {
 	return &SkirmishTracker{
-		state:          skirmishIdle,
-		currentRound:   0,
-		players:        make(map[string]*SkirmishPlayer),
-		teamScores:     make(map[int]float64),
-		matchRounds:    make([]SkirmishMatchRound, 0),
-		winCap:         winCap,
-		pool:           pool,
-		eventsChannel:  eventsChannel,
-		weightProvider: wp,
-		gameConfig:     gc,
-		logger:         log.New(log.Default().Writer(), "[SkirmishTracker] ", log.Default().Flags()),
+		state:               skirmishIdle,
+		currentRound:        0,
+		players:             make(map[string]*SkirmishPlayer),
+		teamScores:          make(map[int]float64),
+		matchRounds:         make([]SkirmishMatchRound, 0),
+		winCap:              winCap,
+		pool:                pool,
+		eventsChannel:       eventsChannel,
+		publicEventsChannel: publicEventsChannel,
+		weightProvider:      wp,
+		gameConfig:          gc,
+		logger:              log.New(log.Default().Writer(), "[SkirmishTracker] ", log.Default().Flags()),
+		quitters:            make([]quitterRecord, 0),
 	}
 }
 
@@ -73,6 +92,7 @@ func (t *SkirmishTracker) clearMatch() {
 	t.matchRounds = make([]SkirmishMatchRound, 0)
 	t.matchStartedAt = time.Time{}
 	t.matchMap = ""
+	t.quitters = make([]quitterRecord, 0)
 }
 
 func (t *SkirmishTracker) getOrInitPlayer(playerID, username string) *SkirmishPlayer {
@@ -329,12 +349,15 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 
 	// Loss calculation and match-end logic
 	losses := make([]MatchLossCalc, 0)
+	winBonuses := make([]matchWinResult, 0)
 	if isMatchOver {
 		t.mu.Lock()
 		totalRounds := t.currentRound
 		persistPlayers := t.players
 		persistMap := t.matchMap
 		persistStart := t.matchStartedAt
+		quittersCopy := make([]quitterRecord, len(t.quitters))
+		copy(quittersCopy, t.quitters)
 		t.mu.Unlock()
 
 		for _, entry := range loseEntries {
@@ -343,14 +366,14 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 				entry.PlayerID,
 				playerScore,
 				avgK,
-				float64(len(winEntries))/float64(len(loseEntries)),
+				MatchLossSizeFactor(len(winEntries), len(loseEntries)),
 				t.gameConfig.Get(CfgMatchLossRatio),
 				t.gameConfig.Get(CfgMatchLossFactorCap),
 			)
 			calc.Username = entry.UserName
 
 			// Participation modifier
-			t.mu.Lock()
+			t.mu.Lock() // potentially overkill adding lock here
 			p := t.players[entry.PlayerID]
 			roundsPlayed := len(p.Rounds)
 			t.mu.Unlock()
@@ -358,15 +381,73 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 			participationRatio := float64(roundsPlayed) / float64(totalRounds)
 			calc.ParticipationRatio = participationRatio
 			adjustedLoss := int(math.Round(float64(calc.ActualLoss) * participationRatio))
-			adjustedLoss = max(min(adjustedLoss, playerScore), 0)
+			adjustedLoss = max(min(adjustedLoss, playerScore), 0) // forgot why min(adjustedLoss, playerScore)
 			calc.ActualLoss = adjustedLoss
 
 			losses = append(losses, calc)
+
+			// Set MatchResultScore for losers
+			t.mu.Lock()
+			if p, ok := t.players[entry.PlayerID]; ok {
+				p.MatchResultScore = -adjustedLoss
+			}
+			t.mu.Unlock()
 
 			if calc.ActualLoss > 0 {
 				if err := data.UpsertSkirmishWin(ctx, entry.PlayerID, -calc.ActualLoss, 0, 0); err != nil {
 					t.logger.Printf("upsert loss failed for %s: %v", entry.PlayerID, err)
 				}
+			}
+		}
+
+		// Build match win bonus pool from loser losses
+		totalPool := 0
+		for _, calc := range losses {
+			totalPool += calc.ActualLoss
+		}
+
+		if totalPool > 0 {
+			// Compute participation weights for winners
+			type winnerWeight struct {
+				entry               *parse.ScoreboardEntry
+				participationWeight float64
+			}
+			weights := make([]winnerWeight, 0, len(winEntries))
+			weightSum := 0.0
+			for _, entry := range winEntries {
+				t.mu.Lock()
+				p := t.players[entry.PlayerID]
+				roundsPlayed := len(p.Rounds)
+				t.mu.Unlock()
+				w := float64(roundsPlayed) / float64(totalRounds)
+				weights = append(weights, winnerWeight{entry, w})
+				weightSum += w
+			}
+
+			for _, ww := range weights {
+				if weightSum == 0 {
+					break
+				}
+				normalizedShare := ww.participationWeight / weightSum
+				bonus := int(math.Round(normalizedShare * float64(totalPool)))
+				if bonus > 0 {
+					if err := data.UpsertSkirmishWin(ctx, ww.entry.PlayerID, bonus, 0, 0); err != nil {
+						t.logger.Printf("match win bonus upsert failed for %s: %v", ww.entry.PlayerID, err)
+					}
+				}
+				winBonuses = append(winBonuses, matchWinResult{
+					playerID: ww.entry.PlayerID,
+					username: ww.entry.UserName,
+					bonus:    bonus,
+					share:    normalizedShare,
+				})
+
+				// Set MatchResultScore for winners
+				t.mu.Lock()
+				if p, ok := t.players[ww.entry.PlayerID]; ok {
+					p.MatchResultScore = bonus
+				}
+				t.mu.Unlock()
 			}
 		}
 
@@ -401,6 +482,15 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		}()
 
 		t.weightProvider.Refresh(ctx)
+
+		if dc != nil && t.publicEventsChannel != "" {
+			go t.sendPublicMatchEndMessage(dc, winningTeam, totalRounds, persistPlayers, quittersCopy)
+		}
+
+		t.mu.Lock()
+		t.clearMatch()
+		t.state = skirmishIdle
+		t.mu.Unlock()
 	}
 
 	t.logger.Printf("round %d: %d win bonuses, %d losses (K=%.0f)", roundNum, len(winResults), len(losses), avgK)
@@ -408,7 +498,7 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	if dc != nil && t.eventsChannel != "" {
 		go t.sendRoundEmbed(dc, roundNum, winningTeam, len(winEntries), len(loseEntries), winResults)
 		if isMatchOver {
-			go t.sendMatchEndEmbed(dc, winningTeam, len(winEntries), len(loseEntries), losses, teamScoresCopy)
+			go t.sendMatchEndEmbed(dc, winningTeam, len(winEntries), len(loseEntries), losses, winBonuses, teamScoresCopy)
 		}
 	}
 }
@@ -439,6 +529,11 @@ func (t *SkirmishTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEven
 		return
 	}
 
+	// Record when the player quit
+	if player.QuitAtRound == 0 {
+		player.QuitAtRound = t.currentRound
+	}
+
 	// Check if team is losing
 	team1Score := t.teamScores[1]
 	team2Score := t.teamScores[2]
@@ -450,45 +545,46 @@ func (t *SkirmishTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEven
 		losingTeamID = 2
 	}
 
-	// If player's team is losing, apply match loss
+	penalty := 0
+
 	if losingTeamID > 0 && player.Team == losingTeamID {
-		// Get player data for loss calculation
 		dbPlayer, err := data.ReadPlayer(ctx, e.PlayerID)
 		if err != nil {
-			return
-		}
-
-		// Count winning team players
-		winTeamID := 3 - losingTeamID
-		winSize := 0
-		for _, p := range t.players {
-			if p.Team == winTeamID {
-				winSize++
-			}
-		}
-
-		avgScoreK := t.weightProvider.K()
-		sizeFactor := math.Min(float64(winSize), t.gameConfig.Get(CfgSkirmishSizeFactorCap))
-
-		loss := ComputeMatchLoss(
-			e.PlayerID,
-			dbPlayer.Score,
-			avgScoreK,
-			sizeFactor,
-			t.gameConfig.Get(CfgMatchLossRatio),
-			t.gameConfig.Get(CfgMatchLossFactorCap),
-		)
-
-		// Apply the loss
-		if loss.ActualLoss != 0 {
-			err := data.AddPlayerScore(ctx, e.PlayerID, -loss.ActualLoss)
-			if err != nil {
-				t.logger.Printf("failed to apply match loss to %s: %v", e.PlayerID, err)
-			} else {
-				t.logger.Printf("player logout penalty: %s lost %d points (losing team %d)", e.PlayerID, loss.ActualLoss, losingTeamID)
-			}
+			t.logger.Printf("failed to read player for logout penalty: %v", err)
 		} else {
-			t.logger.Printf("player logout: %s from losing team %d (no points to lose)", e.PlayerID, losingTeamID)
+			winTeamID := 1
+			if losingTeamID == 1 {
+				winTeamID = 2
+			}
+			winSize, loseSize := 0, 0
+			for _, p := range t.players {
+				if p.Team == winTeamID {
+					winSize++
+				} else if p.Team == losingTeamID {
+					loseSize++
+				}
+			}
+
+			loss := ComputeMatchLoss(
+				e.PlayerID,
+				dbPlayer.Score,
+				t.weightProvider.K(),
+				MatchLossSizeFactor(winSize, loseSize),
+				t.gameConfig.Get(CfgMatchLossRatio),
+				t.gameConfig.Get(CfgMatchLossFactorCap),
+			)
+
+			penalty = loss.ActualLoss
+
+			if loss.ActualLoss != 0 {
+				if err := data.AddPlayerScore(ctx, e.PlayerID, -loss.ActualLoss); err != nil {
+					t.logger.Printf("failed to apply match loss to %s: %v", e.PlayerID, err)
+				} else {
+					t.logger.Printf("player logout penalty: %s lost %d points (losing team %d)", e.PlayerID, loss.ActualLoss, losingTeamID)
+				}
+			} else {
+				t.logger.Printf("player logout: %s from losing team %d (no points to lose)", e.PlayerID, losingTeamID)
+			}
 		}
 	} else if losingTeamID > 0 {
 		t.logger.Printf("player logout: %s from winning team %d (no penalty)", e.PlayerID, 3-losingTeamID)
@@ -496,7 +592,14 @@ func (t *SkirmishTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEven
 		t.logger.Printf("player logout: %s (teams tied)", e.PlayerID)
 	}
 
-	// Remove player from tracking
+	t.quitters = append(t.quitters, quitterRecord{
+		playerID:  e.PlayerID,
+		username:  player.Name,
+		team:      player.Team,
+		quitRound: player.QuitAtRound,
+		penalty:   penalty,
+	})
+
 	delete(t.players, e.PlayerID)
 }
 
@@ -535,6 +638,23 @@ func formatLossesTable(losses []MatchLossCalc) string {
 	return sb.String()
 }
 
+func formatMatchWinTable(results []matchWinResult) string {
+	if len(results) == 0 {
+		return "No bonuses awarded"
+	}
+	var sb strings.Builder
+	sb.WriteString("```\n")
+	for _, r := range results {
+		name := r.username
+		if len(name) > 16 {
+			name = name[:16]
+		}
+		fmt.Fprintf(&sb, "%-16s share=%.0f%% → +%d\n", name, r.share*100, r.bonus)
+	}
+	sb.WriteString("```")
+	return sb.String()
+}
+
 func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, winningTeam int, winSize int, loseSize int, winResults []roundResult) {
 	color := 0x57F287
 	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
@@ -568,7 +688,7 @@ func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, wi
 	}
 }
 
-func (t *SkirmishTracker) sendMatchEndEmbed(dc *discordgo.Session, winningTeam int, winSize int, loseSize int, losses []MatchLossCalc, teamScores map[int]float64) {
+func (t *SkirmishTracker) sendMatchEndEmbed(dc *discordgo.Session, winningTeam int, winSize int, loseSize int, losses []MatchLossCalc, winBonuses []matchWinResult, teamScores map[int]float64) {
 	color := 0x57F287
 	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
 	maxSizeFactor := t.gameConfig.Get(CfgSkirmishSizeFactorCap)
@@ -607,11 +727,12 @@ func (t *SkirmishTracker) sendMatchEndEmbed(dc *discordgo.Session, winningTeam i
 		})
 	}
 
-	// TODO: match win bonuses (matchWinMod being replaced)
-	// fields = append(fields, &discordgo.MessageEmbedField{
-	//     Name:  "🏅 Match win bonuses",
-	//     Value: formatMatchWinBonusesTable(...),
-	// })
+	if len(winBonuses) > 0 {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:  "🏅 Match Win Bonuses",
+			Value: formatMatchWinTable(winBonuses),
+		})
+	}
 
 	embed := &discordgo.MessageEmbed{
 		Title:       title,

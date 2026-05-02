@@ -129,7 +129,7 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Color: 0xFF0000,
 		}
 	} else {
-		scribeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		scribeCtx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
 		scribePlayer, _ := scribeClient.GetPlayer(scribeCtx, player.PlayerID)
 		cancel()
 
