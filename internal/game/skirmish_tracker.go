@@ -321,12 +321,6 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 
 		winMod := t.gameConfig.Get(CfgSkirmishRoundWinMod)
 		bonus := rd * winMod * (float64(len(loseEntries)) / float64(len(winEntries))) * kf
-		// match win bonus moved to separate embed; matchWinMod to be replaced
-		// if isMatchOver {
-		//     matchWinMod := t.gameConfig.Get(CfgSkirmishMatchWinMod)
-		//     md := float64(p.MatchResultScore)
-		//     bonus += md * matchWinMod
-		// }
 
 		w := t.weightProvider.Weight(playerScores[entry.PlayerID])
 		b := int(math.Round(bonus * w))

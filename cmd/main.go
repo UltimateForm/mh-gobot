@@ -329,11 +329,16 @@ func renderAltSkirmishPopEmbed(t time.Time, serverInfo *parse.ServerInfo, entrie
 	description := fmt.Sprintf("```\n%s\n```\n🕒 Last updated: <t:%d:R>", serverName, t.Unix())
 
 	fields := []*discordgo.MessageEmbedField{
-		{Name: "🎮 Type", Value: "8vs8", Inline: true},
 		{Name: "⏱️ Status", Value: statusValue, Inline: true},
 		{Name: "🗺️ Map", Value: serverInfo.Map, Inline: true},
 		{Name: fmt.Sprintf("🔴 Team 1 (%d)", len(team1)), Value: formatTeam(team1), Inline: false},
 		{Name: fmt.Sprintf("🔵 Team 2 (%d)", len(team2)), Value: formatTeam(team2), Inline: false},
+	}
+
+	if len(team1) > 0 || len(team2) > 0 {
+		fields = append([]*discordgo.MessageEmbedField{
+			{Name: "🎮 Type", Value: fmt.Sprintf("%dvs%d", len(team1), len(team2)), Inline: true},
+		}, fields...)
 	}
 
 	mapImg, imgName := loadMapImage(serverInfo.Map)

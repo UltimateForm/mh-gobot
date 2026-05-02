@@ -11,7 +11,6 @@ import (
 
 const (
 	CfgSkirmishRoundWinMod   = "skirmish_round_win_mod"
-	CfgSkirmishMatchWinMod   = "skirmish_match_win_mod"
 	CfgSkirmishSizeFactorCap = "skirmish_size_factor_cap"
 	CfgSkirmishWinCap        = "skirmish_win_cap"
 	CfgMatchLossRatio        = "match_loss_ratio"
@@ -20,7 +19,6 @@ const (
 
 var gameConfigDefaults = map[string]float64{
 	CfgSkirmishRoundWinMod:   0.5,
-	CfgSkirmishMatchWinMod:   0.25,
 	CfgSkirmishSizeFactorCap: 2.0,
 	CfgSkirmishWinCap:        10.0,
 	CfgMatchLossRatio:        0.20,
@@ -29,7 +27,6 @@ var gameConfigDefaults = map[string]float64{
 
 var GameConfigDescriptions = map[string]string{
 	CfgSkirmishRoundWinMod:   "Multiplier on a player's round score to compute their per-round win bonus. Higher = bigger round bonuses.",
-	CfgSkirmishMatchWinMod:   "Multiplier on a player's match-result score for the end-of-match bonus (added on top of the final round bonus).",
 	CfgSkirmishSizeFactorCap: "Cap on the team-imbalance factor used to scale bonuses/losses when teams are uneven. Sympathy clamp.",
 	CfgSkirmishWinCap:        "Number of round wins needed to end a skirmish match. Read once at startup; takes effect on bot restart.",
 	CfgMatchLossRatio:        "Fraction of K used as base match loss for losing players. 0 disables losses entirely.",

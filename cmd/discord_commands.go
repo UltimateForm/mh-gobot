@@ -607,7 +607,6 @@ func handleRanksCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 var configKeys = []string{
 	game.CfgSkirmishRoundWinMod,
-	game.CfgSkirmishMatchWinMod,
 	game.CfgSkirmishSizeFactorCap,
 	game.CfgSkirmishWinCap,
 	game.CfgMatchLossRatio,
@@ -866,7 +865,6 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 					Required:    true,
 					Choices: []*discordgo.ApplicationCommandOptionChoice{
 						{Name: game.CfgSkirmishRoundWinMod, Value: game.CfgSkirmishRoundWinMod},
-						{Name: game.CfgSkirmishMatchWinMod, Value: game.CfgSkirmishMatchWinMod},
 						{Name: game.CfgSkirmishSizeFactorCap, Value: game.CfgSkirmishSizeFactorCap},
 						{Name: game.CfgSkirmishWinCap, Value: game.CfgSkirmishWinCap},
 						{Name: game.CfgMatchLossRatio, Value: game.CfgMatchLossRatio},

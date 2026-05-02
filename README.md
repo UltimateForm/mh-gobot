@@ -12,8 +12,9 @@ A Discord bot that bridges Discord and game servers via RCON. Listens to live ga
 - Persistent leaderboard and server status embeds in Discord (image-based)
 - RCON connection pooling for ad-hoc commands
 - Player vs player kill ledger with historical tracking
-- Skirmish score tracker: round/match win bonuses with team size and score margin factors
-- Discord slash commands: `/score`, `/place`, `/top`, `/versus`, `/nemesis`, `/prey`, `/rconx`
+- Skirmish score tracker: dynamic per-round bonuses, match loss penalties, participation-based scoring
+- Public match summaries: team stats, MVP/SVP callouts, quitter penalties ("Hall of Shame")
+- Discord slash commands: `/score`, `/place`, `/top`, `/versus`, `/nemesis`, `/prey`, `/rconx`, `/tuners`
 - In-game chat commands: `!score`, `!roll`, `!versus`
 
 ## Requirements
@@ -33,7 +34,8 @@ Copy `.env.example` to `.env` and fill in the values:
 | `RCON_PORT` | yes | Game server RCON port |
 | `RCON_PASSWORD` | yes | Game server RCON password |
 | `POP_CHANNEL` | no | Channel ID for the server population embed |
-| `EVENTS_CHANNEL` | no | Channel ID for live game event messages |
+| `EVENTS_CHANNEL` | no | Channel ID for live game event messages and match results |
+| `PUBLIC_EVENTS_CHANNEL` | no | Channel ID for player-facing match summaries (scoreboard, MVP/SVP, hall of shame) |
 | `LEADERBOARDS_CHANNEL` | no | Channel ID for the persistent leaderboard embed |
 | `GAME_CMD_PREFIX` | no | In-game command prefix (default: `!`) |
 | `SKIRMISH_WIN_CAP` | no | Round wins needed to win a skirmish match (default: `10`) |
@@ -60,18 +62,26 @@ make docker-kill-detached
 
 In **deathmatch**, score mirrors the raw game score directly.
 
-In **skirmish**, score is an overall performance rating built from two sources:
+In **skirmish**, score is built from two sources:
 
-- **Raw game score** — points awarded by the game naturally for kills, assists, objectives, etc.
-- **Skirmish bonuses** — extra points awarded on top at the end of rounds and matches.
+- **Raw game score** — points awarded by the game for kills, assists, objectives, etc.
+- **Match bonuses/penalties** — awarded at match end based on win/loss, participation, and skill-based factors.
 
-**Round bonus** — awarded to the winning team at the end of every round, proportional to individual contribution that round. Amplified if the winning team was outnumbered.
+### Per-Round Bonuses
 
-**Match win bonus** — awarded to the winning team at match end, based on performance across the *entire* match, not just the last round. A dominant victory is worth more than a close one. Being outnumbered amplifies it further.
+Winning team members receive a bonus each round based on:
+- **Individual performance** — Kills, assists, objectives that round
+- **Team imbalance** — Bonus amplified if you were outnumbered (e.g., 5v8)
+- **Opponent skill** — Bigger bonus for eliminating higher-ranked players, smaller bonus for lower-ranked
+- **Player rank** — Higher-ranked players gain points slower (diminishing returns prevent runaway rankings)
 
-**Consolation bonus** — the losing team receives a small bonus at match end proportional to their overall match contribution.
+### Match Loss & Win Pool
 
-Players who contributed nothing in a round or match receive no bonus for it.
+At match end:
+- **Losing team** loses points based on rank, participation, and team imbalance (outnumbered teams lose less)
+- **Winning team** shares a bonus pool generated from loser penalties, distributed by participation
+
+See [SCORING.md](SCORING.md) for the detailed breakdown.
 
 ## Data
 
