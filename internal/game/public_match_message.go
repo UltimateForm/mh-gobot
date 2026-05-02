@@ -78,7 +78,7 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 	fmt.Fprintf(&msg, "### TEAM 2\n%s\n", buildTeamTable(team2))
 
 	if len(quitters) > 0 {
-		fmt.Fprintf(&msg, "#### Hall of Shame\n%s\n", buildHallOfShameTable(quitters))
+		fmt.Fprintf(&msg, "### Hall of Shame\n%s\n", buildHallOfShameTable(quitters))
 	}
 
 	if _, err := dc.ChannelMessageSend(t.publicEventsChannel, msg.String()); err != nil {
