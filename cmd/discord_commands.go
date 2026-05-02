@@ -136,26 +136,30 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		matchesPlayed, _ := data.CountMatchesForPlayer(context.Background(), player.PlayerID)
 		matchesWon, _ := data.CountMatchesWonByPlayer(context.Background(), player.PlayerID)
 
+		placement, _ := data.ReadPlayerPlacement(context.Background(), player.PlayerID)
+
 		currentTier, hasCurrent := rankTierProvider.Current(player.Score)
 		nextTier, hasNext := rankTierProvider.Next(player.Score)
-		rankValue := "Unranked"
+		rankName := "Unranked"
 		if hasCurrent {
-			rankValue = currentTier.Name
+			rankName = currentTier.Name
 		}
 		nextValue := "[none]"
 		if hasNext {
 			nextValue = fmt.Sprintf("%s (%s pts)", nextTier.Name, util.HumanFormat(nextTier.ScoreGate-player.Score))
 		}
 
+		placementStr := ""
+		if placement != nil {
+			placementStr = fmt.Sprintf(" - Placed #%d", placement.Rank)
+		}
+
 		embed = &discordgo.MessageEmbed{
 			Title:       "🏆 Score",
-			URL:         fmt.Sprintf("https://mordhau-scribe.com/player/%s", player.PlayerID),
-			Description: fmt.Sprintf("```ansi\n%s — \u001b[33;1m%s pts\u001b[0m\n```", player.Username, util.HumanFormat(player.Score)),
+			Description: fmt.Sprintf("## 🎖️ %s - [%s](https://mordhau-scribe.com/player/%s)\n%s pts%s", rankName, player.Username, player.PlayerID, util.HumanFormat(player.Score), placementStr),
 			Color:       0xF1C40F,
 			Fields: []*discordgo.MessageEmbedField{
-				{Name: "🎖️ Rank", Value: fmt.Sprintf("```\n%s\n```", rankValue), Inline: true},
-				{Name: "🎯 Next", Value: fmt.Sprintf("```\n%s\n```", nextValue), Inline: true},
-				{Name: "\u200b", Value: "\u200b", Inline: true},
+				{Name: "📈 Next Rank", Value: fmt.Sprintf("```\n%s\n```", nextValue), Inline: false},
 				{Name: "⚔️ Kills", Value: fmt.Sprintf("```ansi\n\u001b[31;1m%d\u001b[0m\n```", player.Kills), Inline: true},
 				{Name: "🪦 Deaths", Value: fmt.Sprintf("```ansi\n\u001b[31m%d\u001b[0m\n```", player.Deaths), Inline: true},
 				{Name: "🤝 Assists", Value: fmt.Sprintf("```ansi\n\u001b[36m%d\u001b[0m\n```", player.Assists), Inline: true},
@@ -185,18 +189,19 @@ func handleTopCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	column, ok := data.TopCategory[category]
 	if !ok {
+		content := "❌ Unknown category"
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Embeds: &[]*discordgo.MessageEmbed{{Title: "Error", Description: "Unknown category", Color: 0xFF0000}},
+			Content: &content,
 		})
 		return
 	}
 
 	players, err := data.ReadTopPlayers(context.Background(), 10, column)
 
-	var embed *discordgo.MessageEmbed
+	var content string
 	if err != nil {
 		log.Printf("top command error: %v", err)
-		embed = errorEmbed("")
+		content = "❌ Error"
 	} else {
 		tw := table.NewWriter()
 		tw.AppendHeader(table.Row{"#", "Player", "Score", "K", "D", "A"})
@@ -206,17 +211,11 @@ func handleTopCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		tw.SetStyle(table.StyleLight)
 		tw.Style().Options.DrawBorder = false
 		tw.Style().Options.SeparateRows = false
-		embed = &discordgo.MessageEmbed{
-			Title: fmt.Sprintf("🏆 Top 10 — %s", category),
-			Color: 0xF1C40F,
-			Fields: []*discordgo.MessageEmbedField{
-				{Value: util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024)},
-			},
-		}
+		content = fmt.Sprintf("🏆 **Top 10 — %s**\n%s", category, util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024))
 	}
 
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Embeds: &[]*discordgo.MessageEmbed{embed},
+		Content: &content,
 	})
 }
 
@@ -345,7 +344,6 @@ func handleVersusCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		Color: 0xE74C3C,
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: p1.Username, Value: fmt.Sprintf("```ansi\n\u001b[31;1m%d kills\u001b[0m\n```", versus.AKills), Inline: true},
-			{Name: ":vs:", Value: "\u200b", Inline: true},
 			{Name: p2.Username, Value: fmt.Sprintf("```ansi\n\u001b[31;1m%d kills\u001b[0m\n```", versus.BKills), Inline: true},
 		},
 		Footer: &discordgo.MessageEmbedFooter{
@@ -372,17 +370,17 @@ func handlePlaceCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	player, err := resolvePlayer(query)
 
-	var embed *discordgo.MessageEmbed
+	var content string
 	if errors.Is(err, data.DbPlayerNotFound) {
-		embed = notFoundEmbed(query)
+		content = fmt.Sprintf("❌ Player Not Found\nNo stats found for `%s`", query)
 	} else if err != nil {
 		log.Printf("place command error: %v", err)
-		embed = errorEmbed("")
+		content = "❌ Error"
 	} else {
 		placement, err := data.ReadPlayerPlacement(context.Background(), player.PlayerID)
 		if err != nil {
 			log.Printf("place command placement error: %v", err)
-			embed = errorEmbed("")
+			content = "❌ Error"
 		} else {
 			var sb strings.Builder
 			for _, rp := range placement.Snippet {
@@ -392,19 +390,12 @@ func handlePlaceCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 					sb.WriteString(fmt.Sprintf("  #%-3d %-24s %s pts\n", rp.Rank, rp.Username, util.HumanFormat(rp.Score)))
 				}
 			}
-			embed = &discordgo.MessageEmbed{
-				Title:       fmt.Sprintf("📊 Placement — #%d", placement.Rank),
-				Description: fmt.Sprintf("```\n%s```", sb.String()),
-				Color:       0x3498DB,
-				Footer: &discordgo.MessageEmbedFooter{
-					Text: fmt.Sprintf("Player ID: %s", player.PlayerID),
-				},
-			}
+			content = fmt.Sprintf("📊 **Placement — #%d**\n```\n%s```\nPlayer: [%s](https://mordhau-scribe.com/player/%s)", placement.Rank, sb.String(), player.PlayerID, player.PlayerID)
 		}
 	}
 
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Embeds: &[]*discordgo.MessageEmbed{embed},
+		Content: &content,
 	})
 }
 
@@ -595,13 +586,9 @@ func handleRanksCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	})
 
 	tiers := rankTierProvider.All()
-	var embed *discordgo.MessageEmbed
+	var content string
 	if len(tiers) == 0 {
-		embed = &discordgo.MessageEmbed{
-			Title:       "🎖️ Rank Tiers",
-			Description: "No rank tiers configured.",
-			Color:       0x95A5A6,
-		}
+		content = "🎖️ No rank tiers configured."
 	} else {
 		tw := table.NewWriter()
 		tw.AppendHeader(table.Row{"Score", "Rank", "Short"})
@@ -611,14 +598,10 @@ func handleRanksCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		tw.SetStyle(table.StyleLight)
 		tw.Style().Options.DrawBorder = false
 		tw.Style().Options.SeparateRows = false
-		embed = &discordgo.MessageEmbed{
-			Title:       "🎖️ Rank Tiers",
-			Description: fmt.Sprintf("```\n%s\n```", tw.Render()),
-			Color:       0xF1C40F,
-		}
+		content = fmt.Sprintf("🎖️ **Rank Tiers**\n```\n%s\n```", tw.Render())
 	}
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Embeds: &[]*discordgo.MessageEmbed{embed},
+		Content: &content,
 	})
 }
 

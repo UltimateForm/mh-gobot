@@ -132,7 +132,7 @@ func (l *ListenerClient) route(body string) {
 		default:
 			l.logger.Println("killfeedCh full, dropping event")
 		}
-	case strings.HasPrefix(body, "Login:"), strings.HasPrefix(body, "Logout:"):
+	case strings.HasPrefix(body, "Login:"):
 		event, err := parse.ParseLoginEvent(body)
 		if err != nil || event == nil {
 			l.logger.Printf("failed to parse login event: %v", err)

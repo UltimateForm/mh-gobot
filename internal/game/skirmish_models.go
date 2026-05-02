@@ -1,12 +1,11 @@
 package game
 
 type SkirmishPlayerPerformance struct {
-	Kills int
-	// Deaths expected to be 1 max per round
-	Deaths  int
-	Assists int
-	// native + bonus
-	Score int
+	Kills     int
+	Deaths    int
+	Assists   int
+	Score     int
+	KilledIds []string // victim player IDs (for both kills and assists)
 }
 
 type SkirmishPlayer struct {

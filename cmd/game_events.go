@@ -89,6 +89,7 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 			go logEvent(dc, matchstateMsg(state))
 			tracker.OnMatchState(state)
 		case e := <-listener.LoginEvents:
+			log.Printf("[LOGIN] player %s (%s) %s", e.UserName, e.PlayerID, e.Instance)
 			go logEvent(dc, loginMsg(e))
 			if e.Instance == "out" {
 				tracker.OnPlayerLogout(ctx, e)

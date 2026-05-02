@@ -164,20 +164,18 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 		return
 	}
 
-	if e.IsAssist {
-		p := t.getOrInitPlayer(e.KillerID, e.UserName)
-		perf := p.Rounds[t.currentRound]
-		perf.Assists++
-		p.Rounds[t.currentRound] = perf
-	} else {
-		p := t.getOrInitPlayer(e.KillerID, e.UserName)
-		perf := p.Rounds[t.currentRound]
-		perf.Kills++
-		p.Rounds[t.currentRound] = perf
-	}
-
-	p := t.getOrInitPlayer(e.KilledID, e.KilledUserName)
+	p := t.getOrInitPlayer(e.KillerID, e.UserName)
 	perf := p.Rounds[t.currentRound]
+	if e.IsAssist {
+		perf.Assists++
+	} else {
+		perf.Kills++
+	}
+	perf.KilledIds = append(perf.KilledIds, e.KilledID)
+	p.Rounds[t.currentRound] = perf
+
+	p = t.getOrInitPlayer(e.KilledID, e.KilledUserName)
+	perf = p.Rounds[t.currentRound]
 	perf.Deaths++
 	p.Rounds[t.currentRound] = perf
 }
@@ -257,6 +255,17 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		}
 	}
 
+	// Add victim IDs from winners for rank-differential kill factor calculation
+	for _, entry := range winEntries {
+		p := t.players[entry.PlayerID]
+		for _, vid := range p.Rounds[t.currentRound].KilledIds {
+			if !idSeen[vid] {
+				allIDs = append(allIDs, vid)
+				idSeen[vid] = true
+			}
+		}
+	}
+
 	t.mu.Unlock()
 
 	playerScores, err := data.ReadPlayerScores(ctx, allIDs)
@@ -275,23 +284,29 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		rd := float64(p.Rounds[t.currentRound].Score)
 		t.mu.Unlock()
 
-		// Kill factor from elimination data
+		// Kill factor from rank-differential of eliminations
 		kf := 1.0
-		if p.Rounds[t.currentRound].Kills > 0 {
-			// Simplified: use kills as indicator of contribution
-			kf = math.Max(float64(p.Rounds[t.currentRound].Kills)*1.0/float64(max(len(loseEntries), 1)), killFactorFloor)
-			if kf > 4.0 {
-				kf = 4.0
+		victims := p.Rounds[t.currentRound].KilledIds
+		if len(victims) > 0 {
+			killerScore := float64(playerScores[entry.PlayerID])
+			if killerScore == 0 {
+				killerScore = 1
 			}
+			sum := 0.0
+			for _, vid := range victims {
+				sum += float64(playerScores[vid]) / killerScore
+			}
+			kf = math.Min(math.Max(sum/float64(len(victims)), 0.2), 20.0)
 		}
 
 		winMod := t.gameConfig.Get(CfgSkirmishRoundWinMod)
-		matchWinMod := t.gameConfig.Get(CfgSkirmishMatchWinMod)
 		bonus := rd * winMod * (float64(len(loseEntries)) / float64(len(winEntries))) * kf
-		if isMatchOver {
-			md := float64(p.MatchResultScore)
-			bonus += md * matchWinMod
-		}
+		// match win bonus moved to separate embed; matchWinMod to be replaced
+		// if isMatchOver {
+		//     matchWinMod := t.gameConfig.Get(CfgSkirmishMatchWinMod)
+		//     md := float64(p.MatchResultScore)
+		//     bonus += md * matchWinMod
+		// }
 
 		w := t.weightProvider.Weight(playerScores[entry.PlayerID])
 		b := int(math.Round(bonus * w))
@@ -391,7 +406,10 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	t.logger.Printf("round %d: %d win bonuses, %d losses (K=%.0f)", roundNum, len(winResults), len(losses), avgK)
 
 	if dc != nil && t.eventsChannel != "" {
-		go t.sendEmbed(dc, roundNum, winningTeam, len(winEntries), len(loseEntries), winResults, losses, isMatchOver, teamScoresCopy)
+		go t.sendRoundEmbed(dc, roundNum, winningTeam, len(winEntries), len(loseEntries), winResults)
+		if isMatchOver {
+			go t.sendMatchEndEmbed(dc, winningTeam, len(winEntries), len(loseEntries), losses, teamScoresCopy)
+		}
 	}
 }
 
@@ -465,9 +483,17 @@ func (t *SkirmishTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEven
 		if loss.ActualLoss != 0 {
 			err := data.AddPlayerScore(ctx, e.PlayerID, -loss.ActualLoss)
 			if err != nil {
-				t.logger.Printf("failed to apply match loss: %v", err)
+				t.logger.Printf("failed to apply match loss to %s: %v", e.PlayerID, err)
+			} else {
+				t.logger.Printf("player logout penalty: %s lost %d points (losing team %d)", e.PlayerID, loss.ActualLoss, losingTeamID)
 			}
+		} else {
+			t.logger.Printf("player logout: %s from losing team %d (no points to lose)", e.PlayerID, losingTeamID)
 		}
+	} else if losingTeamID > 0 {
+		t.logger.Printf("player logout: %s from winning team %d (no penalty)", e.PlayerID, 3-losingTeamID)
+	} else {
+		t.logger.Printf("player logout: %s (teams tied)", e.PlayerID)
 	}
 
 	// Remove player from tracking
@@ -509,59 +535,25 @@ func formatLossesTable(losses []MatchLossCalc) string {
 	return sb.String()
 }
 
-func (t *SkirmishTracker) sendEmbed(dc *discordgo.Session, roundNum int, winningTeam int, winSize int, loseSize int, winResults []roundResult, losses []MatchLossCalc, isMatchOver bool, teamScores map[int]float64) {
+func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, winningTeam int, winSize int, loseSize int, winResults []roundResult) {
 	color := 0x57F287
 	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
 	winMod := t.gameConfig.Get(CfgSkirmishRoundWinMod)
-	matchWinMod := t.gameConfig.Get(CfgSkirmishMatchWinMod)
 	maxSizeFactor := t.gameConfig.Get(CfgSkirmishSizeFactorCap)
-	lossRatio := t.gameConfig.Get(CfgMatchLossRatio)
-	lossFactorCap := t.gameConfig.Get(CfgMatchLossFactorCap)
 
-	var title, description string
-	if isMatchOver {
-		var losingScore float64
-		for teamID, score := range teamScores {
-			if teamID != winningTeam {
-				losingScore = score
-				break
-			}
-		}
-		winSizeFactor := float64(loseSize) / float64(winSize)
-		if winSizeFactor > maxSizeFactor {
-			winSizeFactor = maxSizeFactor
-		}
-		loseSizeFactor := float64(winSize) / float64(loseSize)
-		if loseSizeFactor > maxSizeFactor {
-			loseSizeFactor = maxSizeFactor
-		}
-		scoreFactor := 0.5 + 0.5*(teamScores[winningTeam]-losingScore)/math.Max(teamScores[winningTeam], 1.0)
-
-		title = fmt.Sprintf("🏆 Match over — Team %d wins!", winningTeam)
-		description = fmt.Sprintf("**Score:** %d – %.0f | **Size:** %.2f/%.2f | **Margin:** %.2f\n**Mods:** win=%.2f | loss_ratio=%.2f | max_factor=%.2f | **K:** %.0f",
-			roundNum, losingScore, winSizeFactor, loseSizeFactor, scoreFactor, matchWinMod,
-			lossRatio, lossFactorCap, avgK)
-	} else {
-		winSizeFactor := float64(loseSize) / float64(winSize)
-		if winSizeFactor > maxSizeFactor {
-			winSizeFactor = maxSizeFactor
-		}
-		title = fmt.Sprintf("⚔️ Round %d — Team %d wins", roundNum, winningTeam)
-		description = fmt.Sprintf("**Mod:** %.2f | **Team balance:** %.2f | **K:** %.0f", winMod, winSizeFactor, avgK)
+	winSizeFactor := float64(loseSize) / float64(winSize)
+	if winSizeFactor > maxSizeFactor {
+		winSizeFactor = maxSizeFactor
 	}
+
+	title := fmt.Sprintf("⚔️ Round %d — Team %d wins", roundNum, winningTeam)
+	description := fmt.Sprintf("**Mod:** %.2f | **Team balance:** %.2f | **K:** %.0f", winMod, winSizeFactor, avgK)
 
 	fields := []*discordgo.MessageEmbedField{
 		{
 			Name:  fmt.Sprintf("🏅 Team %d bonuses", winningTeam),
 			Value: formatResultsTable(winResults),
 		},
-	}
-
-	if isMatchOver && len(losses) > 0 {
-		fields = append(fields, &discordgo.MessageEmbedField{
-			Name:  "📉 Match Losses",
-			Value: formatLossesTable(losses),
-		})
 	}
 
 	embed := &discordgo.MessageEmbed{
@@ -573,5 +565,62 @@ func (t *SkirmishTracker) sendEmbed(dc *discordgo.Session, roundNum int, winning
 
 	if _, err := dc.ChannelMessageSendEmbed(t.eventsChannel, embed); err != nil {
 		t.logger.Printf("failed to send embed: %v", err)
+	}
+}
+
+func (t *SkirmishTracker) sendMatchEndEmbed(dc *discordgo.Session, winningTeam int, winSize int, loseSize int, losses []MatchLossCalc, teamScores map[int]float64) {
+	color := 0x57F287
+	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
+	maxSizeFactor := t.gameConfig.Get(CfgSkirmishSizeFactorCap)
+	lossRatio := t.gameConfig.Get(CfgMatchLossRatio)
+	lossFactorCap := t.gameConfig.Get(CfgMatchLossFactorCap)
+
+	var losingScore float64
+	for teamID, score := range teamScores {
+		if teamID != winningTeam {
+			losingScore = score
+			break
+		}
+	}
+
+	winSizeFactor := float64(loseSize) / float64(winSize)
+	if winSizeFactor > maxSizeFactor {
+		winSizeFactor = maxSizeFactor
+	}
+	loseSizeFactor := float64(winSize) / float64(loseSize)
+	if loseSizeFactor > maxSizeFactor {
+		loseSizeFactor = maxSizeFactor
+	}
+	scoreFactor := 0.5 + 0.5*(teamScores[winningTeam]-losingScore)/math.Max(teamScores[winningTeam], 1.0)
+
+	title := fmt.Sprintf("🏆 Match over — Team %d wins!", winningTeam)
+	description := fmt.Sprintf("**Score:** %.0f – %.0f | **Size:** %.2f/%.2f | **Margin:** %.2f\n**Mods:** loss_ratio=%.2f | max_factor=%.2f | **K:** %.0f",
+		teamScores[winningTeam], losingScore, winSizeFactor, loseSizeFactor, scoreFactor,
+		lossRatio, lossFactorCap, avgK)
+
+	fields := []*discordgo.MessageEmbedField{}
+
+	if len(losses) > 0 {
+		fields = append(fields, &discordgo.MessageEmbedField{
+			Name:  "📉 Match Losses",
+			Value: formatLossesTable(losses),
+		})
+	}
+
+	// TODO: match win bonuses (matchWinMod being replaced)
+	// fields = append(fields, &discordgo.MessageEmbedField{
+	//     Name:  "🏅 Match win bonuses",
+	//     Value: formatMatchWinBonusesTable(...),
+	// })
+
+	embed := &discordgo.MessageEmbed{
+		Title:       title,
+		Description: description,
+		Color:       color,
+		Fields:      fields,
+	}
+
+	if _, err := dc.ChannelMessageSendEmbed(t.eventsChannel, embed); err != nil {
+		t.logger.Printf("failed to send match end embed: %v", err)
 	}
 }

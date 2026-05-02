@@ -83,7 +83,15 @@ func (c *AvatarCache) Get(ctx context.Context, playFabID string) image.Image {
 	img, err := c.fetch(ctx, playFabID)
 	c.mu.Lock()
 	if err != nil {
-		c.logger.Printf("fetch failed for %s, negative-caching: %v", playFabID, err)
+		c.logger.Printf("fetch failed for %s: %v", playFabID, err)
+		// prefer stale cache over error: if we have an old cached image, use it
+		if ok && entry.img != nil {
+			c.logger.Printf("using stale avatar for %s (age %s)", playFabID, time.Since(entry.fetchedAt).Round(time.Second))
+			c.mu.Unlock()
+			return entry.img
+		}
+		// no old cache available, use fallback with negative marker
+		c.logger.Printf("no stale cache for %s, negative-caching: %v", playFabID, err)
 		c.entries[playFabID] = avatarEntry{fetchedAt: time.Now(), failed: true}
 		c.mu.Unlock()
 		return c.fallback
