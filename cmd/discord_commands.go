@@ -129,7 +129,7 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Color: 0xFF0000,
 		}
 	} else {
-		scribeCtx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+		scribeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		scribePlayer, _ := scribeClient.GetPlayer(scribeCtx, player.PlayerID)
 		cancel()
 
@@ -211,7 +211,7 @@ func handleTopCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		tw.SetStyle(table.StyleLight)
 		tw.Style().Options.DrawBorder = false
 		tw.Style().Options.SeparateRows = false
-		content = fmt.Sprintf("🏆 **Top 10 — %s**\n%s", category, util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024))
+		content = fmt.Sprintf("🏆 **Top 10 - %s**\n%s", category, util.TruncateCodeString(fmt.Sprintf("```\n%s\n```", tw.Render()), 1024))
 	}
 
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
@@ -383,7 +383,7 @@ func handlePlaceCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 					sb.WriteString(fmt.Sprintf("  #%-3d %-24s %s pts\n", rp.Rank, rp.Username, util.HumanFormat(rp.Score)))
 				}
 			}
-			content = fmt.Sprintf("📊 **Placement — #%d**\n```\n%s```\nPlayer: [%s](https://mordhau-scribe.com/player/%s)", placement.Rank, sb.String(), player.PlayerID, player.PlayerID)
+			content = fmt.Sprintf("📊 **Placement - #%d**\n```\n%s```\nPlayer: [%s](https://mordhau-scribe.com/player/%s)", placement.Rank, sb.String(), player.PlayerID, player.PlayerID)
 		}
 	}
 
@@ -552,7 +552,7 @@ func handleSimLossCommand(s *discordgo.Session, i *discordgo.InteractionCreate) 
 		}
 		embed = &discordgo.MessageEmbed{
 			Title: "🔮 Match Loss Simulation",
-			Description: fmt.Sprintf("**%s** — %s pts (placement %s)\n**K:** %.0f | **ratio:** %.2f | **max factor:** %.2f | **size÷:** %.2f\n**base kill:** %d (flat, bonuses extra)",
+			Description: fmt.Sprintf("**%s** - %s pts (placement %s)\n**K:** %.0f | **ratio:** %.2f | **max factor:** %.2f | **size÷:** %.2f\n**base kill:** %d (flat, bonuses extra)",
 				player.Username, util.HumanFormat(player.Score), placementStr, k, lossRatio, lossFactorCap, sizeFactor,
 				baseKillScore),
 			Color: 0xE67E22,

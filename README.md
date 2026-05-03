@@ -64,16 +64,16 @@ In **deathmatch**, score mirrors the raw game score directly.
 
 In **skirmish**, score is built from two sources:
 
-- **Raw game score** — points awarded by the game for kills, assists, objectives, etc.
-- **Match bonuses/penalties** — awarded at match end based on win/loss, participation, and skill-based factors.
+- **Raw game score** - points awarded by the game for kills, assists, objectives, etc.
+- **Match bonuses/penalties** - awarded at match end based on win/loss, participation, and skill-based factors.
 
 ### Per-Round Bonuses
 
 Winning team members receive a bonus each round based on:
-- **Individual performance** — Kills, assists, objectives that round
-- **Team imbalance** — Bonus amplified if you were outnumbered (e.g., 5v8)
-- **Opponent skill** — Bigger bonus for eliminating higher-ranked players, smaller bonus for lower-ranked
-- **Player rank** — Higher-ranked players gain points slower (diminishing returns prevent runaway rankings)
+- **Individual performance** - Kills, assists, objectives that round
+- **Team imbalance** - Bonus amplified if you were outnumbered (e.g., 5v8)
+- **Opponent skill** - Bigger bonus for eliminating higher-ranked players, smaller bonus for lower-ranked
+- **Player rank** - Higher-ranked players gain points slower (diminishing returns prevent runaway rankings)
 
 ### Match Loss & Win Pool
 

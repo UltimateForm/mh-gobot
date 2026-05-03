@@ -660,7 +660,7 @@ func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, wi
 		winSizeFactor = maxSizeFactor
 	}
 
-	title := fmt.Sprintf("⚔️ Round %d — Team %d wins", roundNum, winningTeam)
+	title := fmt.Sprintf("⚔️ Round %d - Team %d wins", roundNum, winningTeam)
 	description := fmt.Sprintf("**Mod:** %.2f | **Team balance:** %.2f | **K:** %.0f", winMod, winSizeFactor, avgK)
 
 	fields := []*discordgo.MessageEmbedField{
@@ -707,7 +707,7 @@ func (t *SkirmishTracker) sendMatchEndEmbed(dc *discordgo.Session, winningTeam i
 	}
 	scoreFactor := 0.5 + 0.5*(teamScores[winningTeam]-losingScore)/math.Max(teamScores[winningTeam], 1.0)
 
-	title := fmt.Sprintf("🏆 Match over — Team %d wins!", winningTeam)
+	title := fmt.Sprintf("🏆 Match over - Team %d wins!", winningTeam)
 	description := fmt.Sprintf("**Score:** %.0f – %.0f | **Imbalance:** %.2f/%.2f (loss reduction) | **Margin:** %.2f\n**Mods:** loss_ratio=%.2f | max_factor=%.2f | **K:** %.0f",
 		teamScores[winningTeam], losingScore, winSizeFactor, loseSizeFactor, scoreFactor,
 		lossRatio, lossFactorCap, avgK)

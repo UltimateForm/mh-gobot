@@ -88,7 +88,7 @@ func TestComputeMatchLoss(t *testing.T) {
 			wantActualLoss: 25,
 		},
 		{
-			name:           "low score below K — small factor, small loss",
+			name:           "low score below K - small factor, small loss",
 			lifetimeScore:  50,
 			avgScoreK:      500,
 			sizeFactor:     1.0,
@@ -100,7 +100,7 @@ func TestComputeMatchLoss(t *testing.T) {
 			wantActualLoss: 13,
 		},
 		{
-			name:           "K grows with avgScore — larger base",
+			name:           "K grows with avgScore - larger base",
 			lifetimeScore:  2000,
 			avgScoreK:      2000,
 			sizeFactor:     1.0,

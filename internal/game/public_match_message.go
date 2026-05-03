@@ -60,7 +60,7 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 	all := slices.Concat(team1, team2)
 	sort.Slice(all, func(i, j int) bool { return all[i].total > all[j].total })
 
-	mvpName, svpName := "—", "—"
+	mvpName, svpName := "-", "-"
 	if len(all) > 0 {
 		mvpName = all[0].name
 	}
@@ -119,7 +119,7 @@ func buildHallOfShameTable(quitters []quitterRecord) string {
 		if len(name) > 16 {
 			name = name[:16]
 		}
-		penalty := "—"
+		penalty := "-"
 		if q.penalty > 0 {
 			penalty = fmt.Sprintf("-%d", q.penalty)
 		}

@@ -25,7 +25,7 @@ ON CONFLICT(player_id) DO UPDATE SET
     deaths    = players.deaths + excluded.deaths,
     assists   = players.assists + excluded.assists,
     raw_score = players.raw_score + excluded.raw_score,
-    score     = players.score + excluded.score
+    score     = CASE WHEN players.scoring_paused = 0 THEN players.score + excluded.score ELSE players.score END
 `, player.PlayerID, player.Username, player.Kills, player.Deaths, player.Assists, player.RawScore, player.Score)
 	if writeErr != nil {
 		return errors.Join(DbPlayerUpsertError, writeErr)
@@ -40,7 +40,7 @@ ON CONFLICT(player_id) DO UPDATE SET
 
 func scanPlayer(row *sql.Row) (*Player, error) {
 	p := &Player{}
-	err := row.Scan(&p.PlayerID, &p.Username, &p.RawScore, &p.Score, &p.Kills, &p.Deaths, &p.Assists, &p.RoundsWon, &p.MatchesWon)
+	err := row.Scan(&p.PlayerID, &p.Username, &p.RawScore, &p.Score, &p.Kills, &p.Deaths, &p.Assists, &p.RoundsWon, &p.MatchesWon, &p.ScoringPaused)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, DbPlayerNotFound
 	}
@@ -51,17 +51,17 @@ func scanPlayer(row *sql.Row) (*Player, error) {
 }
 
 func ReadPlayer(ctx context.Context, playerID string) (*Player, error) {
-	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won FROM players WHERE player_id = ?`, playerID)
+	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE player_id = ?`, playerID)
 	return scanPlayer(row)
 }
 
 func ReadPlayerByName(ctx context.Context, name string) (*Player, error) {
-	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won FROM players WHERE username LIKE ? LIMIT 1`, "%"+name+"%")
+	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE username LIKE ? LIMIT 1`, "%"+name+"%")
 	return scanPlayer(row)
 }
 
 // TopCategory maps Discord option values to DB column names.
-// safe to interpolate into SQL — values are whitelisted here, never from user input directly.
+// safe to interpolate into SQL - values are whitelisted here, never from user input directly.
 var TopCategory = map[string]string{
 	"score":   "score",
 	"kills":   "kills",
@@ -70,7 +70,7 @@ var TopCategory = map[string]string{
 }
 
 func ReadTopPlayers(ctx context.Context, limit int, column string) ([]RankedPlayer, error) {
-	query := fmt.Sprintf(`SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, ROW_NUMBER() OVER (ORDER BY %s DESC) as rank FROM players ORDER BY %s DESC LIMIT ?`, column, column)
+	query := fmt.Sprintf(`SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, ROW_NUMBER() OVER (ORDER BY %s DESC) as rank FROM players ORDER BY %s DESC LIMIT ?`, column, column)
 	rows, err := db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, errors.Join(DbPlayerReadError, err)
@@ -79,7 +79,7 @@ func ReadTopPlayers(ctx context.Context, limit int, column string) ([]RankedPlay
 	players := make([]RankedPlayer, 0, limit)
 	for rows.Next() {
 		var rp RankedPlayer
-		if err := rows.Scan(&rp.PlayerID, &rp.Username, &rp.RawScore, &rp.Score, &rp.Kills, &rp.Deaths, &rp.Assists, &rp.RoundsWon, &rp.MatchesWon, &rp.Rank); err != nil {
+		if err := rows.Scan(&rp.PlayerID, &rp.Username, &rp.RawScore, &rp.Score, &rp.Kills, &rp.Deaths, &rp.Assists, &rp.RoundsWon, &rp.MatchesWon, &rp.ScoringPaused, &rp.Rank); err != nil {
 			return nil, errors.Join(DbPlayerReadError, err)
 		}
 		players = append(players, rp)
@@ -110,7 +110,7 @@ func ReadPlayerPlacement(ctx context.Context, playerID string) (*PlayerPlacement
 	}
 
 	offset := max(0, rank-5)
-	rows, err := tx.QueryContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, ROW_NUMBER() OVER (ORDER BY score DESC) as rank FROM players ORDER BY score DESC LIMIT 9 OFFSET ?`, offset)
+	rows, err := tx.QueryContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, ROW_NUMBER() OVER (ORDER BY score DESC) as rank FROM players ORDER BY score DESC LIMIT 9 OFFSET ?`, offset)
 	if err != nil {
 		return nil, errors.Join(DbPlayerReadError, err)
 	}
@@ -119,7 +119,7 @@ func ReadPlayerPlacement(ctx context.Context, playerID string) (*PlayerPlacement
 	snippet := make([]RankedPlayer, 0, 9)
 	for rows.Next() {
 		var rp RankedPlayer
-		if err := rows.Scan(&rp.PlayerID, &rp.Username, &rp.RawScore, &rp.Score, &rp.Kills, &rp.Deaths, &rp.Assists, &rp.RoundsWon, &rp.MatchesWon, &rp.Rank); err != nil {
+		if err := rows.Scan(&rp.PlayerID, &rp.Username, &rp.RawScore, &rp.Score, &rp.Kills, &rp.Deaths, &rp.Assists, &rp.RoundsWon, &rp.MatchesWon, &rp.ScoringPaused, &rp.Rank); err != nil {
 			return nil, errors.Join(DbPlayerReadError, err)
 		}
 		snippet = append(snippet, rp)
@@ -131,7 +131,7 @@ func ReadPlayerPlacement(ctx context.Context, playerID string) (*PlayerPlacement
 func UpsertSkirmishWin(ctx context.Context, playerID string, scoreBonus int, roundsWon int, matchesWon int) error {
 	res, err := db.ExecContext(ctx, `
 UPDATE players SET
-    score       = score + ?,
+    score       = CASE WHEN scoring_paused = 0 THEN score + ? ELSE score END,
     rounds_won  = rounds_won + ?,
     matches_won = matches_won + ?
 WHERE player_id = ?
@@ -147,13 +147,29 @@ WHERE player_id = ?
 }
 
 func AddPlayerScore(ctx context.Context, playerID string, delta int) error {
-	res, err := db.ExecContext(ctx, `UPDATE players SET score = score + ? WHERE player_id = ?`, delta, playerID)
+	res, err := db.ExecContext(ctx, `UPDATE players SET score = score + ? WHERE player_id = ? AND scoring_paused = 0`, delta, playerID)
 	if err != nil {
 		return errors.Join(DbPlayerUpsertError, err)
 	}
 	rows, _ := res.RowsAffected()
 	if rows == 0 {
-		logger.Printf("AddPlayerScore: player %s not found, skipping", playerID)
+		logger.Printf("AddPlayerScore: player %s not found or scoring paused, skipping", playerID)
+	}
+	return nil
+}
+
+func SetScoringPaused(ctx context.Context, playerID string, paused bool) error {
+	v := 0
+	if paused {
+		v = 1
+	}
+	res, err := db.ExecContext(ctx, `UPDATE players SET scoring_paused = ? WHERE player_id = ?`, v, playerID)
+	if err != nil {
+		return errors.Join(DbPlayerUpsertError, err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return DbPlayerNotFound
 	}
 	return nil
 }

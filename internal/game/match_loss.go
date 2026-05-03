@@ -13,7 +13,7 @@ type MatchLossCalc struct {
 	LossFactor         float64 // clamp(score/K, 0, MaxFactor)
 	SizeFactor         float64 // team-imbalance divisor (>= 1.0)
 	RawLoss            int     // base * factor / sizeFactor (pre-floor)
-	ActualLoss         int     // min(rawLoss, lifetimeScore) — what is actually subtracted
+	ActualLoss         int     // min(rawLoss, lifetimeScore) - what is actually subtracted
 	ParticipationRatio float64 // display only; rounds present / total rounds
 }
 

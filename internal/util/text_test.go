@@ -10,17 +10,17 @@ func TestIsPlayfabID(t *testing.T) {
 		input string
 		want  bool
 	}{
-		// valid — 14 to 16 uppercase alphanumeric
-		{"AAAAAAAAAAAAAAAA", true},  // 16 chars
-		{"AAAAAAAAAAAAAAA", true},   // 15 chars
-		{"AAAAAAAAAAAAAA", true},    // 14 chars
-		{"A1B2C3D4E5F6G7H8", true},  // 16 chars, all valid A-Z0-9
-		{"ABCDEF1234567890", true},  // 16 chars mixed
+		// valid - 14 to 16 uppercase alphanumeric
+		{"AAAAAAAAAAAAAAAA", true}, // 16 chars
+		{"AAAAAAAAAAAAAAA", true},  // 15 chars
+		{"AAAAAAAAAAAAAA", true},   // 14 chars
+		{"A1B2C3D4E5F6G7H8", true}, // 16 chars, all valid A-Z0-9
+		{"ABCDEF1234567890", true}, // 16 chars mixed
 		// invalid
-		{"AAAAAAAAAAAAA", false},    // 13 chars — too short
-		{"AAAAAAAAAAAAAAAAA", false}, // 17 chars — too long
-		{"aaaaaaaaaaaaaaaa", false}, // lowercase
-		{"AAAAAAAAAAAAAA!!", false}, // special chars
+		{"AAAAAAAAAAAAA", false},     // 13 chars - too short
+		{"AAAAAAAAAAAAAAAAA", false}, // 17 chars - too long
+		{"aaaaaaaaaaaaaaaa", false},  // lowercase
+		{"AAAAAAAAAAAAAA!!", false},  // special chars
 		{"", false},
 	}
 	for _, tt := range tests {

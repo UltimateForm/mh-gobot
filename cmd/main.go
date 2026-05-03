@@ -142,7 +142,7 @@ func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 	}
 
 	return discord.RenderResult{
-		Content:   fmt.Sprintf("🏆 **Top 20** — updated <t:%d:R>", t.Unix()),
+		Content:   fmt.Sprintf("🏆 **Top 20** - updated <t:%d:R>", t.Unix()),
 		Image:     imgReader,
 		ImageName: "leaderboard.png",
 	}, nil
@@ -317,7 +317,7 @@ func renderAltSkirmishPopEmbed(t time.Time, serverInfo *parse.ServerInfo, entrie
 		}
 		var b strings.Builder
 		for _, p := range team {
-			fmt.Fprintf(&b, "> [%s](https://mordhau-scribe.com/player/%s) — K %d · D %d · A %d\n", p.UserName, p.PlayerID, p.Kills, p.Deaths, p.Assists)
+			fmt.Fprintf(&b, "> [%s](https://mordhau-scribe.com/player/%s) - K %d · D %d · A %d\n", p.UserName, p.PlayerID, p.Kills, p.Deaths, p.Assists)
 		}
 		return strings.TrimRight(b.String(), "\n")
 	}

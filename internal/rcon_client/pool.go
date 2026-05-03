@@ -74,7 +74,7 @@ func (p *ConnectionPool) Get(ctx context.Context) (*ControlledClient, error) {
 		default:
 		}
 
-		// 2. Idle empty — try to allocate a new slot
+		// 2. Idle empty - try to allocate a new slot
 		p.mu.Lock()
 		if p.allocated < p.maxSize {
 			p.allocated++
@@ -91,7 +91,7 @@ func (p *ConnectionPool) Get(ctx context.Context) (*ControlledClient, error) {
 		}
 		p.mu.Unlock()
 
-		// 3. Pool at capacity — block until a client is returned or ctx is done
+		// 3. Pool at capacity - block until a client is returned or ctx is done
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
