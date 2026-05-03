@@ -3,7 +3,7 @@ module github.com/UltimateForm/mh-gobot
 go 1.25.3
 
 require (
-	github.com/UltimateForm/tcprcon v1.0.2
+	github.com/UltimateForm/tcprcon v1.0.3
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/fogleman/gg v1.3.0
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0

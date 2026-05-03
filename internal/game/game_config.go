@@ -16,6 +16,7 @@ const (
 	CfgMatchLossRatio        = "match_loss_ratio"
 	CfgMatchLossFactorCap    = "match_loss_factor_cap"
 	CfgStartingPoints        = "starting_points"
+	CfgQuitterPenaltyTeamMin = "quitter_penalty_team_min"
 )
 
 var gameConfigDefaults = map[string]float64{
@@ -25,6 +26,7 @@ var gameConfigDefaults = map[string]float64{
 	CfgMatchLossRatio:        0.20,
 	CfgMatchLossFactorCap:    4.0,
 	CfgStartingPoints:        0,
+	CfgQuitterPenaltyTeamMin: 4,
 }
 
 var GameConfigDescriptions = map[string]string{
@@ -34,6 +36,7 @@ var GameConfigDescriptions = map[string]string{
 	CfgMatchLossRatio:        "Fraction of K used as base match loss for losing players. 0 disables losses entirely.",
 	CfgMatchLossFactorCap:    "Cap on the loss factor (clamps lifetime_score/K). Higher = bigger max losses for top-ranked players.",
 	CfgStartingPoints:        "Score awarded to brand-new players on first insert. Does not affect raw_score. 0 means new players start at 0.",
+	CfgQuitterPenaltyTeamMin: "Minimum size of the losing team (including the quitter) for the quit penalty to apply. Quits from teams smaller than this are penalty-free, since natural attrition in low-pop matches shouldn't be punished. Set to 0 to disable the floor.",
 }
 
 func GameConfigDefaults() map[string]float64 {

@@ -124,7 +124,7 @@ func (l *ListenerClient) route(body string) {
 	case strings.HasPrefix(body, "Killfeed:"):
 		event, err := parse.ParseKillfeedEvent(body)
 		if err != nil || event == nil {
-			l.logger.Printf("failed to parse killfeed event: %v", err)
+			l.logger.Printf("failed to parse killfeed(\"%s\") event: %v", body, err)
 			return
 		}
 		select {

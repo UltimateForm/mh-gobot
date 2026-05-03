@@ -1,5 +1,7 @@
 github.com/UltimateForm/tcprcon v1.0.2 h1:oopD2DrwztBI4CTTMXhQFeaSNbJHrs6LeTaJiNfmhVk=
 github.com/UltimateForm/tcprcon v1.0.2/go.mod h1:RYrjyiorIt2xTcF+QYT3C5TSTZATcg8mv1uGrOTmwBc=
+github.com/UltimateForm/tcprcon v1.0.3 h1:QNtaWdaYwiPlPrPj+UIxEdG6VKvuHvGSit4/3qZhygw=
+github.com/UltimateForm/tcprcon v1.0.3/go.mod h1:RYrjyiorIt2xTcF+QYT3C5TSTZATcg8mv1uGrOTmwBc=
 github.com/bwmarrin/discordgo v0.29.0 h1:FmWeXFaKUwrcL3Cx65c20bTRW+vOb6k8AnaP+EgjDno=
 github.com/bwmarrin/discordgo v0.29.0/go.mod h1:NJZpH+1AfhIcyQsPeuBKsUtYrRnjkyu0kIVMCHkZtRY=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

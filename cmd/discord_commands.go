@@ -605,6 +605,7 @@ var configKeys = []string{
 	game.CfgMatchLossRatio,
 	game.CfgMatchLossFactorCap,
 	game.CfgStartingPoints,
+	game.CfgQuitterPenaltyTeamMin,
 }
 
 func handleTunersGetCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -923,6 +924,7 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 						{Name: game.CfgMatchLossRatio, Value: game.CfgMatchLossRatio},
 						{Name: game.CfgMatchLossFactorCap, Value: game.CfgMatchLossFactorCap},
 						{Name: game.CfgStartingPoints, Value: game.CfgStartingPoints},
+						{Name: game.CfgQuitterPenaltyTeamMin, Value: game.CfgQuitterPenaltyTeamMin},
 					},
 				},
 				{

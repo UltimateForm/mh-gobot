@@ -559,25 +559,30 @@ func (t *SkirmishTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEven
 				}
 			}
 
-			loss := ComputeMatchLoss(
-				e.PlayerID,
-				dbPlayer.Score,
-				t.weightProvider.K(),
-				MatchLossSizeFactor(winSize, loseSize),
-				t.gameConfig.Get(CfgMatchLossRatio),
-				t.gameConfig.Get(CfgMatchLossFactorCap),
-			)
-
-			penalty = loss.ActualLoss
-
-			if loss.ActualLoss != 0 {
-				if err := data.AddPlayerScore(ctx, e.PlayerID, -loss.ActualLoss); err != nil {
-					t.logger.Printf("failed to apply match loss to %s: %v", e.PlayerID, err)
-				} else {
-					t.logger.Printf("player logout penalty: %s lost %d points (losing team %d)", e.PlayerID, loss.ActualLoss, losingTeamID)
-				}
+			minTeamSize := int(t.gameConfig.Get(CfgQuitterPenaltyTeamMin))
+			if loseSize < minTeamSize {
+				t.logger.Printf("player logout: %s from losing team %d skipped penalty (team size %d < %d)", e.PlayerID, losingTeamID, loseSize, minTeamSize)
 			} else {
-				t.logger.Printf("player logout: %s from losing team %d (no points to lose)", e.PlayerID, losingTeamID)
+				loss := ComputeMatchLoss(
+					e.PlayerID,
+					dbPlayer.Score,
+					t.weightProvider.K(),
+					MatchLossSizeFactor(winSize, loseSize),
+					t.gameConfig.Get(CfgMatchLossRatio),
+					t.gameConfig.Get(CfgMatchLossFactorCap),
+				)
+
+				penalty = loss.ActualLoss
+
+				if loss.ActualLoss != 0 {
+					if err := data.AddPlayerScore(ctx, e.PlayerID, -loss.ActualLoss); err != nil {
+						t.logger.Printf("failed to apply match loss to %s: %v", e.PlayerID, err)
+					} else {
+						t.logger.Printf("player logout penalty: %s lost %d points (losing team %d)", e.PlayerID, loss.ActualLoss, losingTeamID)
+					}
+				} else {
+					t.logger.Printf("player logout: %s from losing team %d (no points to lose)", e.PlayerID, losingTeamID)
+				}
 			}
 		}
 	} else if losingTeamID > 0 {
@@ -651,7 +656,6 @@ func formatMatchWinTable(results []matchWinResult) string {
 
 func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, winningTeam int, winSize int, loseSize int, winResults []roundResult) {
 	color := 0x57F287
-	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
 	winMod := t.gameConfig.Get(CfgSkirmishRoundWinMod)
 	maxSizeFactor := t.gameConfig.Get(CfgSkirmishSizeFactorCap)
 
@@ -661,11 +665,11 @@ func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, wi
 	}
 
 	title := fmt.Sprintf("⚔️ Round %d - Team %d wins", roundNum, winningTeam)
-	description := fmt.Sprintf("**Mod:** %.2f | **Team balance:** %.2f | **K:** %.0f", winMod, winSizeFactor, avgK)
+	description := fmt.Sprintf("**Round Win Mod:** %.2f | **Team Balance Mod:** %.2f", winMod, winSizeFactor)
 
 	fields := []*discordgo.MessageEmbedField{
 		{
-			Name:  fmt.Sprintf("🏅 Team %d bonuses", winningTeam),
+			Name:  fmt.Sprintf("🏅 Team %d win bonuses", winningTeam),
 			Value: formatResultsTable(winResults),
 		},
 	}
