@@ -56,7 +56,7 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 	sort.Slice(team1, func(i, j int) bool { return team1[i].total > team1[j].total })
 	sort.Slice(team2, func(i, j int) bool { return team2[i].total > team2[j].total })
 
-	// MVP/SVP across both teams
+	// MVP (highest score) across both teams
 	all := slices.Concat(team1, team2)
 	sort.Slice(all, func(i, j int) bool { return all[i].total > all[j].total })
 
@@ -64,8 +64,16 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 	if len(all) > 0 {
 		mvpName = all[0].name
 	}
-	if len(all) > 1 {
-		svpName = all[1].name
+
+	// SVP (most assists) across both teams
+	if len(all) > 0 {
+		maxAssists := -1
+		for _, row := range all {
+			if row.assists > maxAssists {
+				maxAssists = row.assists
+				svpName = row.name
+			}
+		}
 	}
 
 	timeStr := fmt.Sprintf("<t:%d:f>", time.Now().Unix())

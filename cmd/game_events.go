@@ -74,7 +74,9 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 			go logEvent(dc, scorefeedTeamMsg(e))
 			go tracker.OnTeamScore(ctx, dc, e)
 		case e := <-listener.KillfeedEvents:
-			go logEvent(dc, killfeedMsg(e))
+			if config.Global.Debug {
+				go logEvent(dc, killfeedMsg(e))
+			}
 			go persistPlayer(parse.MapKilledFromKillfeed(*e))
 			go persistPlayer(parse.MapKillerFromKillfeed(*e))
 			tracker.OnKill(e)
@@ -86,17 +88,22 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 				}()
 			}
 		case state := <-listener.MatchstateEvents:
-			go logEvent(dc, matchstateMsg(state))
+			if config.Global.Debug {
+				go logEvent(dc, matchstateMsg(state))
+			}
 			tracker.OnMatchState(state)
 		case e := <-listener.LoginEvents:
-			log.Printf("[LOGIN] player %s (%s) %s", e.UserName, e.PlayerID, e.Instance)
-			go logEvent(dc, loginMsg(e))
+			if config.Global.Debug {
+				go logEvent(dc, loginMsg(e))
+			}
 			if e.Instance == "out" {
 				tracker.OnPlayerLogout(ctx, e)
 			}
 		case e := <-listener.ChatEvents:
 			go gameCommandRegistry.Dispatch(ctx, e)
-			go logEvent(dc, chatMsg(e))
+			if config.Global.Debug {
+				go logEvent(dc, chatMsg(e))
+			}
 		}
 	}
 }

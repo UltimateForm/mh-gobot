@@ -72,7 +72,6 @@ func (c *AvatarCache) Get(ctx context.Context, playFabID string) image.Image {
 			ttl = avatarNegativeTTL
 		}
 		if time.Since(entry.fetchedAt) < ttl {
-			c.logger.Printf("cache hit for %s (age %s, failed=%v)", playFabID, time.Since(entry.fetchedAt).Round(time.Second), entry.failed)
 			if entry.failed {
 				return c.fallback
 			}

@@ -219,13 +219,9 @@ func handleTopCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	})
 }
 
-func ledgerListEmbed(title string, subject *data.Player, entries []data.LedgerEntry) *discordgo.MessageEmbed {
+func ledgerListMessage(title string, entries []data.LedgerEntry) string {
 	if len(entries) == 0 {
-		return &discordgo.MessageEmbed{
-			Title:       title,
-			Description: fmt.Sprintf("No data found for **%s**", subject.Username),
-			Color:       0x95A5A6,
-		}
+		return fmt.Sprintf("**%s**\nNo data found", title)
 	}
 	tw := table.NewWriter()
 	tw.AppendHeader(table.Row{"#", "Player", "Kills"})
@@ -235,12 +231,7 @@ func ledgerListEmbed(title string, subject *data.Player, entries []data.LedgerEn
 	tw.SetStyle(table.StyleLight)
 	tw.Style().Options.DrawBorder = false
 	tw.Style().Options.SeparateRows = false
-	return &discordgo.MessageEmbed{
-		Title:       title,
-		Description: fmt.Sprintf("```\n%s\n```", tw.Render()),
-		Color:       0xE74C3C,
-		Footer:      &discordgo.MessageEmbedFooter{Text: fmt.Sprintf("Player ID: %s", subject.PlayerID)},
-	}
+	return fmt.Sprintf("**%s**\n```\n%s\n```", title, tw.Render())
 }
 
 func handleNemesisCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -250,24 +241,25 @@ func handleNemesisCommand(s *discordgo.Session, i *discordgo.InteractionCreate) 
 	})
 	player, err := resolvePlayer(query)
 	if err != nil {
-		var embed *discordgo.MessageEmbed
+		var content string
 		if errors.Is(err, data.DbPlayerNotFound) {
-			embed = notFoundEmbed(query)
+			content = fmt.Sprintf("❌ Player not found: `%s`", query)
 		} else {
 			log.Printf("nemesis command error: %v", err)
-			embed = errorEmbed("")
+			content = "❌ Error"
 		}
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 		return
 	}
 	entries, err := data.ReadTopKillersOf(context.Background(), player.PlayerID, 10)
 	if err != nil {
 		log.Printf("nemesis command read error: %v", err)
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{{Title: "Error", Color: 0xFF0000}}})
+		content := "❌ Error"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 		return
 	}
-	embed := ledgerListEmbed(fmt.Sprintf("☠️ Top killers of %s", player.Username), player, entries)
-	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+	content := ledgerListMessage(fmt.Sprintf("☠️ Top killers of %s", player.Username), entries)
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 }
 
 func handlePreyCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -277,24 +269,25 @@ func handlePreyCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	})
 	player, err := resolvePlayer(query)
 	if err != nil {
-		var embed *discordgo.MessageEmbed
+		var content string
 		if errors.Is(err, data.DbPlayerNotFound) {
-			embed = notFoundEmbed(query)
+			content = fmt.Sprintf("❌ Player not found: `%s`", query)
 		} else {
 			log.Printf("prey command error: %v", err)
-			embed = errorEmbed("")
+			content = "❌ Error"
 		}
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 		return
 	}
 	entries, err := data.ReadTopVictimsOf(context.Background(), player.PlayerID, 10)
 	if err != nil {
 		log.Printf("prey command read error: %v", err)
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{{Title: "Error", Color: 0xFF0000}}})
+		content := "❌ Error"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 		return
 	}
-	embed := ledgerListEmbed(fmt.Sprintf("🎯 Top victims of %s", player.Username), player, entries)
-	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+	content := ledgerListMessage(fmt.Sprintf("🎯 Top victims of %s", player.Username), entries)
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 }
 
 func handleVersusCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {

@@ -18,6 +18,7 @@ type dcConfig struct {
 	PublicEventsChannel string
 	LeaderboardsChannel string
 	KnownServers        []string
+	Debug               bool
 }
 
 type rconConfig struct {
@@ -90,6 +91,7 @@ func init() {
 			PublicEventsChannel: os.Getenv("PUBLIC_EVENTS_CHANNEL"),
 			LeaderboardsChannel: os.Getenv("LEADERBOARDS_CHANNEL"),
 			KnownServers:        knownServers,
+			Debug:               os.Getenv("DEBUG") == "1",
 		},
 		rconConfig: rconConfig{
 			RconUri:            fmt.Sprintf("%v:%v", os.Getenv("RCON_ADDRESS"), os.Getenv("RCON_PORT")),
