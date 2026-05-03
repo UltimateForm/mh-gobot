@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-func UpsertPlayer(ctx context.Context, player Player) error {
+func UpsertPlayer(ctx context.Context, player Player, startingPoints int) error {
 	if player.PlayerID == "" {
 		return DbInvalidPlayer
 	}
@@ -17,6 +17,15 @@ func UpsertPlayer(ctx context.Context, player Player) error {
 		return errors.Join(DbPlayerUpsertError, err)
 	}
 	defer tx.Rollback()
+
+	// Seed new players with starting score. No-op if the player row already exists.
+	// i considered doing some other trick with subtracting startingPoints back from excluded.score
+	// but this is simpler in my eyes, at the cost of some minor performance overhead
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO players (player_id, username, score) VALUES (?, ?, ?)`,
+		player.PlayerID, player.Username, startingPoints); err != nil {
+		return errors.Join(DbPlayerUpsertError, err)
+	}
+
 	_, writeErr := tx.Exec(`INSERT INTO players (player_id, username, kills, deaths, assists, raw_score, score)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(player_id) DO UPDATE SET
@@ -30,8 +39,6 @@ ON CONFLICT(player_id) DO UPDATE SET
 	if writeErr != nil {
 		return errors.Join(DbPlayerUpsertError, writeErr)
 	}
-	// rowsAffected, _ := write.RowsAffected()
-	// logger.Printf("player id %v mutation on %v rows", player.PlayerID, rowsAffected)
 	if err := tx.Commit(); err != nil {
 		return errors.Join(DbPlayerUpsertError, DbFailedToCommitDbTransaction, err)
 	}
@@ -205,10 +212,15 @@ func ReadPlayerScores(ctx context.Context, playerIDs []string) (map[string]int, 
 
 func ReadAggregates(ctx context.Context) (*PlayerAggregates, error) {
 	var agg PlayerAggregates
-	err := db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(kills), 0), COALESCE(SUM(deaths), 0), COALESCE(AVG(score), 0) FROM players`).
-		Scan(&agg.TotalPlayers, &agg.TotalKills, &agg.TotalDeaths, &agg.AvgScore)
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(kills), 0), COALESCE(SUM(deaths), 0), COALESCE(SUM(assists), 0), COALESCE(AVG(score), 0) FROM players`).
+		Scan(&agg.TotalPlayers, &agg.TotalKills, &agg.TotalDeaths, &agg.TotalAssists, &agg.AvgScore)
 	if err != nil {
 		return nil, errors.Join(DbPlayerReadError, err)
 	}
 	return &agg, nil
+}
+
+func ReadBottomPlayer(ctx context.Context) (*Player, error) {
+	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE score > 0 ORDER BY score ASC LIMIT 1`)
+	return scanPlayer(row)
 }

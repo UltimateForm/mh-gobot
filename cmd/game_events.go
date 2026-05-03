@@ -25,7 +25,8 @@ func logEvent(dc *discordgo.Session, msg string) {
 }
 
 func persistPlayer(p data.Player) {
-	if err := data.UpsertPlayer(context.Background(), p); err != nil {
+	startingPoints := int(gameConfig.Get(game.CfgStartingPoints))
+	if err := data.UpsertPlayer(context.Background(), p, startingPoints); err != nil {
 		log.Printf("failed to upsert player: %v", err)
 	}
 }

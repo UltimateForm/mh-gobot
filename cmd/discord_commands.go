@@ -604,6 +604,7 @@ var configKeys = []string{
 	game.CfgSkirmishWinCap,
 	game.CfgMatchLossRatio,
 	game.CfgMatchLossFactorCap,
+	game.CfgStartingPoints,
 }
 
 func handleTunersGetCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -669,7 +670,66 @@ func handleTunersSetCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 	})
 }
 
+func handleStatsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	ctx := context.Background()
+	agg, err := data.ReadAggregates(ctx)
+	if err != nil {
+		log.Printf("stats: read aggregates: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{errorEmbed("failed to read aggregates")}})
+		return
+	}
+
+	totalMatches, err := data.CountAllMatches(ctx)
+	if err != nil {
+		log.Printf("stats: count matches: %v", err)
+	}
+
+	topPlayers, _ := data.ReadTopPlayers(ctx, 1, data.TopCategory["score"])
+	bottomPlayer, _ := data.ReadBottomPlayer(ctx)
+
+	topStr := "—"
+	if len(topPlayers) > 0 && topPlayers[0].Score > 0 {
+		topStr = fmt.Sprintf("**[%s](https://mordhau-scribe.com/player/%s)** — %s pts", topPlayers[0].Username, topPlayers[0].PlayerID, util.HumanFormat(topPlayers[0].Score))
+	}
+	bottomStr := "—"
+	if bottomPlayer != nil {
+		bottomStr = fmt.Sprintf("**[%s](https://mordhau-scribe.com/player/%s)** — %s pts", bottomPlayer.Username, bottomPlayer.PlayerID, util.HumanFormat(bottomPlayer.Score))
+	}
+
+	k := weightProvider.K()
+
+	embed := &discordgo.MessageEmbed{
+		Title: "📊 Server Stats",
+		Color: 0x5865F2,
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "👥 Total Players", Value: fmt.Sprintf("```ansi\n\u001b[34;1m%d\u001b[0m\n```", agg.TotalPlayers), Inline: true},
+			{Name: "🎮 Total Matches", Value: fmt.Sprintf("```ansi\n\u001b[35;1m%s\u001b[0m\n```", util.HumanFormat(totalMatches)), Inline: true},
+			{Name: "📈 Avg Score (K)", Value: fmt.Sprintf("```ansi\n\u001b[33;1m%s\u001b[0m\n```", util.HumanFormat(int(k))), Inline: true},
+			{Name: "⚔️ Total Kills", Value: fmt.Sprintf("```ansi\n\u001b[31;1m%s\u001b[0m\n```", util.HumanFormat(agg.TotalKills)), Inline: true},
+			{Name: "🪦 Total Deaths", Value: fmt.Sprintf("```ansi\n\u001b[31m%s\u001b[0m\n```", util.HumanFormat(agg.TotalDeaths)), Inline: true},
+			{Name: "🤝 Total Assists", Value: fmt.Sprintf("```ansi\n\u001b[36m%s\u001b[0m\n```", util.HumanFormat(agg.TotalAssists)), Inline: true},
+			{Name: "🏆 Top Player", Value: topStr, Inline: true},
+			{Name: "🥄 Bottom Player", Value: bottomStr, Inline: true},
+		},
+	}
+
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds: &[]*discordgo.MessageEmbed{embed},
+	})
+}
+
 var commandRegistry = discord.NewCommandRegistry([]discord.Command{
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:        "stats",
+			Description: "Get general server stats",
+		},
+		Handler: handleStatsCommand,
+	},
 	{
 		Definition: &discordgo.ApplicationCommand{
 			Name:        "score",
@@ -862,6 +922,7 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 						{Name: game.CfgSkirmishWinCap, Value: game.CfgSkirmishWinCap},
 						{Name: game.CfgMatchLossRatio, Value: game.CfgMatchLossRatio},
 						{Name: game.CfgMatchLossFactorCap, Value: game.CfgMatchLossFactorCap},
+						{Name: game.CfgStartingPoints, Value: game.CfgStartingPoints},
 					},
 				},
 				{

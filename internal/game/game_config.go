@@ -15,6 +15,7 @@ const (
 	CfgSkirmishWinCap        = "skirmish_win_cap"
 	CfgMatchLossRatio        = "match_loss_ratio"
 	CfgMatchLossFactorCap    = "match_loss_factor_cap"
+	CfgStartingPoints        = "starting_points"
 )
 
 var gameConfigDefaults = map[string]float64{
@@ -23,6 +24,7 @@ var gameConfigDefaults = map[string]float64{
 	CfgSkirmishWinCap:        10.0,
 	CfgMatchLossRatio:        0.20,
 	CfgMatchLossFactorCap:    4.0,
+	CfgStartingPoints:        0,
 }
 
 var GameConfigDescriptions = map[string]string{
@@ -31,6 +33,7 @@ var GameConfigDescriptions = map[string]string{
 	CfgSkirmishWinCap:        "Number of round wins needed to end a skirmish match. Read once at startup; takes effect on bot restart.",
 	CfgMatchLossRatio:        "Fraction of K used as base match loss for losing players. 0 disables losses entirely.",
 	CfgMatchLossFactorCap:    "Cap on the loss factor (clamps lifetime_score/K). Higher = bigger max losses for top-ranked players.",
+	CfgStartingPoints:        "Score awarded to brand-new players on first insert. Does not affect raw_score. 0 means new players start at 0.",
 }
 
 func GameConfigDefaults() map[string]float64 {

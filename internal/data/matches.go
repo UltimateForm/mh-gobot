@@ -94,6 +94,12 @@ func CountMatchesForPlayer(ctx context.Context, playerID string) (int, error) {
 	return count, err
 }
 
+func CountAllMatches(ctx context.Context) (int, error) {
+	var count int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM matches`).Scan(&count)
+	return count, err
+}
+
 func CountMatchesWonByPlayer(ctx context.Context, playerID string) (int, error) {
 	var count int
 	err := db.QueryRowContext(ctx, `
