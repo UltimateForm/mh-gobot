@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -58,10 +59,21 @@ func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t t
 	if imageName == "" {
 		imageName = "embed_image.png"
 	}
-	if result.Image != nil && embed != nil {
-		// embed images need a special placeholder wrapper so we prepare it here
-		embed.Image = &discordgo.MessageEmbedImage{URL: "attachment://" + imageName}
+
+	var imageBytes []byte
+	if result.Image != nil {
+		var err error
+		imageBytes, err = io.ReadAll(result.Image)
+		if err != nil {
+			src.logger.Printf("failed to read image: %v", err)
+			imageBytes = nil
+		}
+		if len(imageBytes) > 0 && embed != nil {
+			// embed images need a special placeholder wrapper so we prepare it here
+			embed.Image = &discordgo.MessageEmbedImage{URL: "attachment://" + imageName}
+		}
 	}
+
 	for k, v := range src.channels {
 		if v != "" {
 			edit := &discordgo.MessageEdit{Channel: k, ID: v, Attachments: &[]*discordgo.MessageAttachment{}}
@@ -72,8 +84,8 @@ func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t t
 				content := result.Content
 				edit.Content = &content
 			}
-			if result.Image != nil {
-				edit.Files = []*discordgo.File{{Name: imageName, Reader: result.Image}}
+			if len(imageBytes) > 0 {
+				edit.Files = []*discordgo.File{{Name: imageName, Reader: bytes.NewReader(imageBytes)}}
 			}
 			if _, err := dc.ChannelMessageEditComplex(edit); err != nil {
 				src.logger.Printf("failed to edit message: %v", err)
@@ -95,8 +107,8 @@ func (src *PersistentEmbed) tick(ctx context.Context, dc *discordgo.Session, t t
 				// kinda hoping we always got a content
 				send.Content = result.Content
 			}
-			if result.Image != nil {
-				send.Files = []*discordgo.File{{Name: imageName, Reader: result.Image}}
+			if len(imageBytes) > 0 {
+				send.Files = []*discordgo.File{{Name: imageName, Reader: bytes.NewReader(imageBytes)}}
 			}
 			msg, err := dc.ChannelMessageSendComplex(k, send)
 			if err != nil {
