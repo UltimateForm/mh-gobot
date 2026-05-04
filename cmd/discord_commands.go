@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/UltimateForm/mh-gobot/internal/config"
 	"github.com/UltimateForm/mh-gobot/internal/data"
 	"github.com/UltimateForm/mh-gobot/internal/discord"
 	"github.com/UltimateForm/mh-gobot/internal/game"
@@ -40,6 +41,17 @@ func notFoundEmbed(query string) *discordgo.MessageEmbed {
 }
 
 func handleRconxCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if !config.Global.Debug {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "this command is disabled",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
 	options := i.ApplicationCommandData().Options
 	var cmdString string
 	for _, opt := range options {
