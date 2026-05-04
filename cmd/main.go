@@ -42,22 +42,30 @@ func Start() {
 	dg.AddHandler(commandRegistry.Handler())
 
 	var persistentPopWatch *discord.PersistentEmbed
-	if config.Global.PopChannel != "" {
+	if len(config.Global.PopChannels) > 0 {
+		popChannelMap := make(map[string]string)
+		for _, ch := range config.Global.PopChannels {
+			popChannelMap[ch] = ""
+		}
 		persistentPopWatch = discord.NewPersistentEmbed(
 			renderPopEmbed,
 			"playerlist",
 			time.Second*30,
-			map[string]string{config.Global.PopChannel: ""},
+			popChannelMap,
 		)
 	}
 
 	var persistentLeaderboard *discord.PersistentEmbed
-	if config.Global.LeaderboardsChannel != "" {
+	if len(config.Global.LeaderboardsChannels) > 0 {
+		leaderboardChannelMap := make(map[string]string)
+		for _, ch := range config.Global.LeaderboardsChannels {
+			leaderboardChannelMap[ch] = ""
+		}
 		persistentLeaderboard = discord.NewPersistentEmbed(
 			renderLeaderboardEmbed,
 			"leaderboard",
 			time.Second*60,
-			map[string]string{config.Global.LeaderboardsChannel: ""},
+			leaderboardChannelMap,
 		)
 	}
 

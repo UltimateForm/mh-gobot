@@ -13,10 +13,10 @@ import (
 
 type dcConfig struct {
 	DcToken             string
-	PopChannel          string
+	PopChannels         []string
 	EventsChannel       string
 	PublicEventsChannel string
-	LeaderboardsChannel string
+	LeaderboardsChannels []string
 	KnownServers        []string
 	Debug               bool
 }
@@ -40,8 +40,8 @@ func (src *botConfig) Validate() {
 	if src.DcToken == "" {
 		log.Fatal("missing dc token")
 	}
-	if src.PopChannel == "" {
-		log.Println("warning: missing pop channel, pop embed will be disabled")
+	if len(src.PopChannels) == 0 {
+		log.Println("warning: missing pop channels, pop embed will be disabled")
 	}
 	if src.EventsChannel == "" {
 		log.Println("warning: missing events channel, event messages will be disabled")
@@ -49,8 +49,8 @@ func (src *botConfig) Validate() {
 	if src.PublicEventsChannel == "" {
 		log.Println("warning: missing public events channel, public match end messages will be disabled")
 	}
-	if src.LeaderboardsChannel == "" {
-		log.Println("warning: missing leaderboards channel, leaderboard embed will be disabled")
+	if len(src.LeaderboardsChannels) == 0 {
+		log.Println("warning: missing leaderboards channels, leaderboard embed will be disabled")
 	}
 	if src.RconUri == "" {
 		log.Fatal("missing rcon uri")
@@ -74,6 +74,17 @@ func init() {
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Fatal(errors.Join(errors.New("failed to load bot config"), err))
 	}
+	parseChannels := func(envVar string) []string {
+		if envVar == "" {
+			return []string{}
+		}
+		channels := strings.Split(envVar, ",")
+		for i := range channels {
+			channels[i] = strings.TrimSpace(channels[i])
+		}
+		return channels
+	}
+
 	knownServersStr := os.Getenv("KNOWN_SERVERS")
 	knownServers := []string{}
 	if knownServersStr != "" {
@@ -86,10 +97,10 @@ func init() {
 	Global = botConfig{
 		dcConfig: dcConfig{
 			DcToken:             os.Getenv("DC_TOKEN"),
-			PopChannel:          os.Getenv("POP_CHANNEL"),
+			PopChannels:         parseChannels(os.Getenv("POP_CHANNELS")),
 			EventsChannel:       os.Getenv("EVENTS_CHANNEL"),
 			PublicEventsChannel: os.Getenv("PUBLIC_EVENTS_CHANNEL"),
-			LeaderboardsChannel: os.Getenv("LEADERBOARDS_CHANNEL"),
+			LeaderboardsChannels: parseChannels(os.Getenv("LEADERBOARDS_CHANNELS")),
 			KnownServers:        knownServers,
 			Debug:               os.Getenv("DEBUG") == "1",
 		},
