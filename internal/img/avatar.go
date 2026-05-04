@@ -22,11 +22,14 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+var errNoAvatarURL = errors.New("no avatar url")
+
 const (
 	avatarSize         = 96
 	avatarMaxBodyBytes = 2 * 1024 * 1024
 	avatarSuccessTTL   = 8 * time.Hour
 	avatarNegativeTTL  = 10 * time.Minute
+	avatarMissingTTL   = 24 * time.Hour
 	avatarFetchTimeout = 10 * time.Second
 )
 
@@ -34,6 +37,7 @@ type avatarEntry struct {
 	img       image.Image
 	fetchedAt time.Time
 	failed    bool
+	noURL     bool
 }
 
 type AvatarCache struct {
@@ -69,7 +73,11 @@ func (c *AvatarCache) Get(ctx context.Context, playFabID string) image.Image {
 	if ok {
 		ttl := avatarSuccessTTL
 		if entry.failed {
-			ttl = avatarNegativeTTL
+			if entry.noURL {
+				ttl = avatarMissingTTL
+			} else {
+				ttl = avatarNegativeTTL
+			}
 		}
 		if time.Since(entry.fetchedAt) < ttl {
 			if entry.failed {
@@ -82,16 +90,21 @@ func (c *AvatarCache) Get(ctx context.Context, playFabID string) image.Image {
 	img, err := c.fetch(ctx, playFabID)
 	c.mu.Lock()
 	if err != nil {
-		c.logger.Printf("fetch failed for %s: %v", playFabID, err)
+		// check if this is a "no avatar URL" error vs a transient fetch error
+		isNoURL := errors.Is(err, errNoAvatarURL)
+		if isNoURL {
+			c.logger.Printf("avatar missing for %s (no URL from scribe, will not retry for %v)", playFabID, avatarMissingTTL)
+		} else {
+			c.logger.Printf("fetch failed for %s: %v", playFabID, err)
+		}
 		// prefer stale cache over error: if we have an old cached image, use it
 		if ok && entry.img != nil {
 			c.logger.Printf("using stale avatar for %s (age %s)", playFabID, time.Since(entry.fetchedAt).Round(time.Second))
 			c.mu.Unlock()
 			return entry.img
 		}
-		// no old cache available, use fallback with negative marker
-		c.logger.Printf("no stale cache for %s, negative-caching: %v", playFabID, err)
-		c.entries[playFabID] = avatarEntry{fetchedAt: time.Now(), failed: true}
+		// no old cache available, use fallback with appropriate marker
+		c.entries[playFabID] = avatarEntry{fetchedAt: time.Now(), failed: true, noURL: isNoURL}
 		c.mu.Unlock()
 		return c.fallback
 	}
@@ -130,7 +143,7 @@ func (c *AvatarCache) fetch(ctx context.Context, playFabID string) (image.Image,
 		return nil, fmt.Errorf("scribe lookup: %w", err)
 	}
 	if player.AvatarURL == "" {
-		return nil, errors.New("no avatar url")
+		return nil, errNoAvatarURL
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, player.AvatarURL, nil)
 	if err != nil {
