@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"strings"
 	"time"
 
@@ -735,6 +736,23 @@ func handleStatsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	})
 }
 
+func handleRestartCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Restarting in 3 seconds...",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+	go func() {
+		time.Sleep(3 * time.Second)
+		log.Println("restart requested via discord command")
+		stopApp()
+		rconPool.Close()
+		os.Exit(1)
+	}()
+}
+
 var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 	{
 		Definition: &discordgo.ApplicationCommand{
@@ -834,6 +852,14 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 			},
 		},
 		Handler: handleVersusCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "restart",
+			Description:              "Gracefully restart the bot",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+		},
+		Handler: handleRestartCommand,
 	},
 	{
 		Definition: &discordgo.ApplicationCommand{

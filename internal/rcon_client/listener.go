@@ -24,7 +24,8 @@ const (
 )
 
 const listenerChannelBuffer = 32
-const keepaliveIntervalSecs = 100
+const keepaliveIntervalSecs = 30
+const keepaliveAckTimeoutSecs = 10
 const reconnectDelaySecs = 5
 
 type ListenerClient struct {
@@ -38,6 +39,7 @@ type ListenerClient struct {
 	ScorefeedPlayerEvents <-chan *parse.ScorefeedPlayerEvent
 	ScorefeedTeamEvents   <-chan *parse.ScorefeedTeamEvent
 	MatchstateEvents      <-chan string
+	aliveAcksCh           chan packet.RCONPacket
 	killfeedCh            chan *parse.KillfeedEvent
 	loginCh               chan *parse.LoginEvent
 	chatCh                chan *parse.ChatEvent
@@ -77,6 +79,7 @@ func NewListener(uri, password string, listenTypes []ListenType) (*ListenerClien
 			log.Default().Flags(),
 		),
 	}
+	l.aliveAcksCh = make(chan packet.RCONPacket, 1)
 	l.KillfeedEvents = l.killfeedCh
 	l.LoginEvents = l.loginCh
 	l.ChatEvents = l.chatCh
@@ -192,19 +195,25 @@ func (l *ListenerClient) route(body string) {
 func (l *ListenerClient) stream(ctx context.Context) {
 	for {
 		connCtx, cancelConn := context.WithCancel(ctx)
-		go l.keepalive(connCtx)
+		go l.keepalive(connCtx, cancelConn)
 
 		packets := packet.CreateResponseChannel(l.client, connCtx)
 		for pkt := range packets {
 			if pkt.Error != nil {
+				l.logger.Printf("stream error: %v", pkt.Error)
 				if netErr, ok := pkt.Error.(net.Error); ok && netErr.Timeout() {
+					l.logger.Println("timeout, retrying...")
 					continue
 				}
-				l.logger.Printf("stream error: %v", pkt.Error)
+				l.logger.Println("breaking on error")
 				break
 			}
 			body := pkt.BodyStr()
 			if strings.HasPrefix(body, "Keeping client alive") {
+				select {
+				case l.aliveAcksCh <- pkt.RCONPacket: // overkill imo, but idc that much
+				default:
+				}
 				continue
 			}
 			l.route(body)
@@ -229,7 +238,7 @@ func (l *ListenerClient) stream(ctx context.Context) {
 	}
 }
 
-func (l *ListenerClient) keepalive(ctx context.Context) {
+func (l *ListenerClient) keepalive(ctx context.Context, cancelConn context.CancelFunc) {
 	ticker := time.NewTicker(keepaliveIntervalSecs * time.Second)
 	defer ticker.Stop()
 	for {
@@ -244,6 +253,17 @@ func (l *ListenerClient) keepalive(ctx context.Context) {
 			l.client.mu.Unlock()
 			if err != nil {
 				l.logger.Printf("keepalive write error: %v", err)
+				cancelConn()
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-l.aliveAcksCh:
+			case <-time.After(keepaliveAckTimeoutSecs * time.Second):
+				l.logger.Println("keepalive ack timeout, connection presumed dead")
+				cancelConn()
+				return
 			}
 		}
 	}

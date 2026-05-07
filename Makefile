@@ -31,7 +31,7 @@ docker-run:
 	docker run --rm --env-file $(ENV_FILE) -v $(HOME)/.mh-gobot:/home/appuser/.mh-gobot:Z $(IMAGE)
 
 docker-run-detached: docker-kill-detached
-	docker run -d --name $(IMAGE) --env-file $(ENV_FILE) -v $(HOME)/.mh-gobot:/home/appuser/.mh-gobot:Z $(IMAGE)
+	docker run -d --name $(IMAGE) --restart=on-failure --env-file $(ENV_FILE) -v $(HOME)/.mh-gobot:/home/appuser/.mh-gobot:Z $(IMAGE)
 
 docker-kill-detached:
 	docker rm -f $(IMAGE) 2>/dev/null || true

@@ -26,6 +26,7 @@ import (
 )
 
 var rconPool *rcon_client.ConnectionPool
+var stopApp context.CancelFunc
 
 func Start() {
 	config.Global.Validate()
@@ -37,7 +38,8 @@ func Start() {
 	if err != nil {
 		log.Fatal(errors.Join(errors.New("failed to create dc bot"), err))
 	}
-	appCtx, stopApp := context.WithCancel(context.Background())
+	var appCtx context.Context
+	appCtx, stopApp = context.WithCancel(context.Background())
 
 	dg.AddHandler(commandRegistry.Handler())
 
