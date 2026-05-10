@@ -89,7 +89,7 @@ func handleHelpGameCommand(ctx context.Context, event *parse.ChatEvent, args []s
 
 func handleRrGameCommand(ctx context.Context, event *parse.ChatEvent, args []string) error {
 	if gameConfig.Get(game.CfgRrEnabled) == 0 {
-		return rconSay(ctx, fmt.Sprintf("%s: !rr is currently disabled by the admin", event.UserName))
+		return rconSay(ctx, fmt.Sprintf("%s: !rr is currently disabled by admin", event.UserName))
 	}
 	if len(args) == 0 {
 		player, err := data.ReadPlayer(ctx, event.PlayerID)

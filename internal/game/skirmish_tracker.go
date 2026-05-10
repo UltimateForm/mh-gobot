@@ -95,6 +95,16 @@ func (t *SkirmishTracker) clearMatch() {
 	t.quitters = make([]quitterRecord, 0)
 }
 
+func (t *SkirmishTracker) TeamScores() map[int]int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make(map[int]int, len(t.teamScores))
+	for k, v := range t.teamScores {
+		out[k] = int(v)
+	}
+	return out
+}
+
 func (t *SkirmishTracker) getOrInitPlayer(playerID, username string) *SkirmishPlayer {
 	if p, ok := t.players[playerID]; ok {
 		return p
@@ -203,6 +213,9 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session, e *parse.ScorefeedTeamEvent) {
 	t.mu.Lock()
 	if t.state != skirmishInProgress {
+		// Bot isn't actively tracking this match (e.g. mid-match restart).
+		// Capture the score so the pop embed can show it; skip round-end processing.
+		t.teamScores[e.TeamID] = e.NewScore
 		t.mu.Unlock()
 		return
 	}

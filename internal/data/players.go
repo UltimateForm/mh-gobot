@@ -63,7 +63,15 @@ func ReadPlayer(ctx context.Context, playerID string) (*Player, error) {
 }
 
 func ReadPlayerByName(ctx context.Context, name string) (*Player, error) {
-	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE username LIKE ? LIMIT 1`, "%"+name+"%")
+	row := db.QueryRowContext(ctx, `
+SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused
+FROM players
+WHERE username LIKE ?
+ORDER BY
+    CASE WHEN LOWER(username) = LOWER(?) THEN 0 ELSE 1 END,
+    LENGTH(username),
+    username
+LIMIT 1`, "%"+name+"%", name)
 	return scanPlayer(row)
 }
 

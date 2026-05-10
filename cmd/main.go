@@ -43,34 +43,6 @@ func Start() {
 
 	dg.AddHandler(commandRegistry.Handler())
 
-	var persistentPopWatch *discord.PersistentEmbed
-	if len(config.Global.PopChannels) > 0 {
-		popChannelMap := make(map[string]string)
-		for _, ch := range config.Global.PopChannels {
-			popChannelMap[ch] = ""
-		}
-		persistentPopWatch = discord.NewPersistentEmbed(
-			renderPopEmbed,
-			"playerlist",
-			time.Second*30,
-			popChannelMap,
-		)
-	}
-
-	var persistentLeaderboard *discord.PersistentEmbed
-	if len(config.Global.LeaderboardsChannels) > 0 {
-		leaderboardChannelMap := make(map[string]string)
-		for _, ch := range config.Global.LeaderboardsChannels {
-			leaderboardChannelMap[ch] = ""
-		}
-		persistentLeaderboard = discord.NewPersistentEmbed(
-			renderLeaderboardEmbed,
-			"leaderboard",
-			time.Second*60,
-			leaderboardChannelMap,
-		)
-	}
-
 	rconlistener, err := rcon_client.NewListener(
 		config.Global.RconUri,
 		config.Global.RconPassword,
@@ -96,6 +68,34 @@ func Start() {
 	skirmishTracker := game.NewSkirmishTracker(rconPool, config.Global.EventsChannel, config.Global.PublicEventsChannel, gameConfig.Get(game.CfgSkirmishWinCap), weightProvider, gameConfig)
 	deathmatchTracker := game.NewDeathmatchTracker(weightProvider)
 	gameRouter := game.NewGameRouter(rconPool, skirmishTracker, deathmatchTracker)
+
+	var persistentPopWatch *discord.PersistentEmbed
+	if len(config.Global.PopChannels) > 0 {
+		popChannelMap := make(map[string]string)
+		for _, ch := range config.Global.PopChannels {
+			popChannelMap[ch] = ""
+		}
+		persistentPopWatch = discord.NewPersistentEmbed(
+			func(t time.Time) (discord.RenderResult, error) { return renderPopEmbed(t, skirmishTracker) },
+			"playerlist",
+			time.Second*30,
+			popChannelMap,
+		)
+	}
+
+	var persistentLeaderboard *discord.PersistentEmbed
+	if len(config.Global.LeaderboardsChannels) > 0 {
+		leaderboardChannelMap := make(map[string]string)
+		for _, ch := range config.Global.LeaderboardsChannels {
+			leaderboardChannelMap[ch] = ""
+		}
+		persistentLeaderboard = discord.NewPersistentEmbed(
+			renderLeaderboardEmbed,
+			"leaderboard",
+			time.Second*60,
+			leaderboardChannelMap,
+		)
+	}
 
 	dg.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("Logged in as: %v#%v", s.State.User.Username, s.State.User.Discriminator)
@@ -158,7 +158,7 @@ func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 	}, nil
 }
 
-func renderPopEmbed(t time.Time) (discord.RenderResult, error) {
+func renderPopEmbed(t time.Time, skirmishTracker *game.SkirmishTracker) (discord.RenderResult, error) {
 	var infoRaw, scoreboardRaw string
 	err := rconPool.WithClient(context.Background(), func(client *rcon_client.ControlledClient) error {
 		var err error
@@ -187,7 +187,7 @@ func renderPopEmbed(t time.Time) (discord.RenderResult, error) {
 	}
 
 	if config.Global.SkirmishAltPopType == 1 && strings.EqualFold(serverInfo.GameMode, "skirmish") {
-		return renderAltSkirmishPopEmbed(t, serverInfo, entries)
+		return renderAltSkirmishPopEmbed(t, serverInfo, entries, skirmishTracker)
 	}
 
 	title := serverInfo.ServerName
@@ -287,7 +287,7 @@ func loadMapImage(mapName string) (io.Reader, string) {
 	return bytes.NewReader(data), filepath.Base(path)
 }
 
-func renderAltSkirmishPopEmbed(t time.Time, serverInfo *parse.ServerInfo, entries []*parse.ScoreboardEntry) (discord.RenderResult, error) {
+func renderAltSkirmishPopEmbed(t time.Time, serverInfo *parse.ServerInfo, entries []*parse.ScoreboardEntry, skirmishTracker *game.SkirmishTracker) (discord.RenderResult, error) {
 	var durationRaw string
 	err := rconPool.WithClient(context.Background(), func(client *rcon_client.ControlledClient) error {
 		var err error
@@ -338,11 +338,20 @@ func renderAltSkirmishPopEmbed(t time.Time, serverInfo *parse.ServerInfo, entrie
 	}
 	description := fmt.Sprintf("```\n%s\n```\n🕒 Last updated: <t:%d:R>", serverName, t.Unix())
 
+	teamScores := skirmishTracker.TeamScores()
+	showScores := teamScores[1] > 0 || teamScores[2] > 0
+	teamLabel := func(emoji string, teamID int) string {
+		if showScores {
+			return fmt.Sprintf("%s Team %d -- [%d rounds]", emoji, teamID, teamScores[teamID])
+		}
+		return fmt.Sprintf("%s Team %d", emoji, teamID)
+	}
+
 	fields := []*discordgo.MessageEmbedField{
 		{Name: "⏱️ Status", Value: statusValue, Inline: true},
 		{Name: "🗺️ Map", Value: serverInfo.Map, Inline: true},
-		{Name: fmt.Sprintf("🔴 Team 1 (%d)", len(team1)), Value: formatTeam(team1), Inline: false},
-		{Name: fmt.Sprintf("🔵 Team 2 (%d)", len(team2)), Value: formatTeam(team2), Inline: false},
+		{Name: teamLabel("🔴", 1), Value: formatTeam(team1), Inline: false},
+		{Name: teamLabel("🔵", 2), Value: formatTeam(team2), Inline: false},
 	}
 
 	if len(team1) > 0 || len(team2) > 0 {
