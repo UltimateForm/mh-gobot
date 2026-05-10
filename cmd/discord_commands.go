@@ -705,13 +705,13 @@ func handleStatsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	topPlayers, _ := data.ReadTopPlayers(ctx, 1, data.TopCategory["score"])
 	bottomPlayer, _ := data.ReadBottomPlayer(ctx)
 
-	topStr := "—"
+	topStr := "-"
 	if len(topPlayers) > 0 && topPlayers[0].Score > 0 {
-		topStr = fmt.Sprintf("**[%s](https://mordhau-scribe.com/player/%s)** — %s pts", topPlayers[0].Username, topPlayers[0].PlayerID, util.HumanFormat(topPlayers[0].Score))
+		topStr = fmt.Sprintf("**[%s](https://mordhau-scribe.com/player/%s)** - %s pts", topPlayers[0].Username, topPlayers[0].PlayerID, util.HumanFormat(topPlayers[0].Score))
 	}
-	bottomStr := "—"
+	bottomStr := "-"
 	if bottomPlayer != nil {
-		bottomStr = fmt.Sprintf("**[%s](https://mordhau-scribe.com/player/%s)** — %s pts", bottomPlayer.Username, bottomPlayer.PlayerID, util.HumanFormat(bottomPlayer.Score))
+		bottomStr = fmt.Sprintf("**[%s](https://mordhau-scribe.com/player/%s)** - %s pts", bottomPlayer.Username, bottomPlayer.PlayerID, util.HumanFormat(bottomPlayer.Score))
 	}
 
 	k := weightProvider.K()
@@ -734,6 +734,109 @@ func handleStatsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 		Embeds: &[]*discordgo.MessageEmbed{embed},
 	})
+}
+
+func handleToggleRrCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	state := i.ApplicationCommandData().Options[0].StringValue()
+	enabled := state == "on"
+	value := 0.0
+	if enabled {
+		value = 1.0
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	if err := gameConfig.Set(context.Background(), game.CfgRrEnabled, value); err != nil {
+		log.Printf("toggle_rr error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed(err.Error())},
+		})
+		return
+	}
+
+	content := "🔓 `!rr` command **enabled** - players can pause/resume their own ranking"
+	if !enabled {
+		content = "🔒 `!rr` command **disabled** - players can no longer pause/resume their own ranking"
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+}
+
+func handleGetRrCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	players, err := data.ReadPausedPlayers(context.Background())
+	if err != nil {
+		log.Printf("get_rr error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed("failed to read paused players")},
+		})
+		return
+	}
+
+	var content string
+	if len(players) == 0 {
+		content = "No players currently have ranking paused."
+	} else {
+		var b strings.Builder
+		fmt.Fprintf(&b, "**Players with ranking paused (%d):**\n", len(players))
+		for _, p := range players {
+			fmt.Fprintf(&b, "- %s (`%s`)\n", p.Username, p.PlayerID)
+		}
+		content = b.String()
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+}
+
+func handleSetRrCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	options := i.ApplicationCommandData().Options
+	var query, state string
+	for _, opt := range options {
+		switch opt.Name {
+		case "player":
+			query = opt.StringValue()
+		case "state":
+			state = opt.StringValue()
+		}
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	player, err := resolvePlayer(query)
+	if errors.Is(err, data.DbPlayerNotFound) {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{notFoundEmbed(query)},
+		})
+		return
+	}
+	if err != nil {
+		log.Printf("set_rr resolve error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed("failed to look up player")},
+		})
+		return
+	}
+
+	paused := state == "off"
+	if err := data.SetScoringPaused(context.Background(), player.PlayerID, paused); err != nil {
+		log.Printf("set_rr error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed(err.Error())},
+		})
+		return
+	}
+
+	verb := "resumed"
+	if paused {
+		verb = "paused"
+	}
+	content := fmt.Sprintf("✅ Ranking %s for **%s** (`%s`)", verb, player.Username, player.PlayerID)
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 }
 
 func handleRestartCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -996,5 +1099,59 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 			},
 		},
 		Handler: handleSimLossCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "toggle_rr",
+			Description:              "Enable or disable players from using the in-game !rr command",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "state",
+					Description: "on = players can use !rr, off = command is disabled",
+					Required:    true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{Name: "on", Value: "on"},
+						{Name: "off", Value: "off"},
+					},
+				},
+			},
+		},
+		Handler: handleToggleRrCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "get_rr",
+			Description:              "List all players who currently have ranking paused",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+		},
+		Handler: handleGetRrCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "set_rr",
+			Description:              "Pause or resume ranking for a specific player (admin override)",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "player",
+					Description: "PlayFab ID or player name",
+					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "state",
+					Description: "on = ranking active, off = ranking paused",
+					Required:    true,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{Name: "on", Value: "on"},
+						{Name: "off", Value: "off"},
+					},
+				},
+			},
+		},
+		Handler: handleSetRrCommand,
 	},
 })

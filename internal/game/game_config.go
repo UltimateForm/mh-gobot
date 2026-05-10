@@ -6,6 +6,8 @@ import (
 	"log"
 	"sync"
 
+	"maps"
+
 	"github.com/UltimateForm/mh-gobot/internal/data"
 )
 
@@ -17,6 +19,7 @@ const (
 	CfgMatchLossFactorCap    = "match_loss_factor_cap"
 	CfgStartingPoints        = "starting_points"
 	CfgQuitterPenaltyTeamMin = "quitter_penalty_team_min"
+	CfgRrEnabled             = "rr_enabled"
 )
 
 var gameConfigDefaults = map[string]float64{
@@ -27,6 +30,7 @@ var gameConfigDefaults = map[string]float64{
 	CfgMatchLossFactorCap:    4.0,
 	CfgStartingPoints:        0,
 	CfgQuitterPenaltyTeamMin: 4,
+	CfgRrEnabled:             1,
 }
 
 var GameConfigDescriptions = map[string]string{
@@ -37,13 +41,12 @@ var GameConfigDescriptions = map[string]string{
 	CfgMatchLossFactorCap:    "Cap on the loss factor (clamps lifetime_score/K). Higher = bigger max losses for top-ranked players.",
 	CfgStartingPoints:        "Score awarded to brand-new players on first insert. Does not affect raw_score. 0 means new players start at 0.",
 	CfgQuitterPenaltyTeamMin: "Minimum size of the losing team (including the quitter) for the quit penalty to apply. Quits from teams smaller than this are penalty-free, since natural attrition in low-pop matches shouldn't be punished. Set to 0 to disable the floor.",
+	CfgRrEnabled:             "Whether players can use the in-game !rr command to pause/resume their own ranking. 1 = enabled, 0 = disabled. Admins can still use /set_rr regardless.",
 }
 
 func GameConfigDefaults() map[string]float64 {
 	out := make(map[string]float64, len(gameConfigDefaults))
-	for k, v := range gameConfigDefaults {
-		out[k] = v
-	}
+	maps.Copy(out, gameConfigDefaults)
 	return out
 }
 
@@ -55,9 +58,7 @@ type GameConfig struct {
 
 func NewGameConfig() *GameConfig {
 	values := make(map[string]float64, len(gameConfigDefaults))
-	for k, v := range gameConfigDefaults {
-		values[k] = v
-	}
+	maps.Copy(values, gameConfigDefaults)
 	return &GameConfig{
 		values: values,
 		logger: log.New(log.Default().Writer(), "[GameConfig] ", log.Default().Flags()),
@@ -126,8 +127,6 @@ func (g *GameConfig) All() map[string]float64 {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	out := make(map[string]float64, len(g.values))
-	for k, v := range g.values {
-		out[k] = v
-	}
+	maps.Copy(out, g.values)
 	return out
 }

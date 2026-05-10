@@ -224,3 +224,20 @@ func ReadBottomPlayer(ctx context.Context) (*Player, error) {
 	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE score > 0 ORDER BY score ASC LIMIT 1`)
 	return scanPlayer(row)
 }
+
+func ReadPausedPlayers(ctx context.Context) ([]Player, error) {
+	rows, err := db.QueryContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE scoring_paused = 1 ORDER BY username ASC`)
+	if err != nil {
+		return nil, errors.Join(DbPlayerReadError, err)
+	}
+	defer rows.Close()
+	players := []Player{}
+	for rows.Next() {
+		var p Player
+		if err := rows.Scan(&p.PlayerID, &p.Username, &p.RawScore, &p.Score, &p.Kills, &p.Deaths, &p.Assists, &p.RoundsWon, &p.MatchesWon, &p.ScoringPaused); err != nil {
+			return nil, errors.Join(DbPlayerReadError, err)
+		}
+		players = append(players, p)
+	}
+	return players, nil
+}

@@ -87,3 +87,13 @@ If you disconnect from a losing team, you're penalized immediately based on:
 - If your team was outnumbered
 
 This is to prevent people from rage-quitting without consequence, while still being fair to players with legitimate disconnects.
+
+## Pausing Your Rank
+
+You can opt out of ranking changes at any time using the in-game `!rr` command:
+
+- `!rr` - check whether your scoring is currently active or paused
+- `!rr off` - pause ranking; your kills/deaths/assists still track but your rank stays locked
+- `!rr on` - resume ranking; future round bonuses and match penalties apply again
+
+While paused you won't gain or lose rank from anything - useful if you're warming up, goofing around, or playing modes you don't want counted. Admins can disable the command server-wide or override your setting.

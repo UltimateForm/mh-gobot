@@ -15,7 +15,7 @@ A Discord bot that bridges Discord and game servers via RCON. Listens to live ga
 - Skirmish score tracker: dynamic per-round bonuses, match loss penalties, participation-based scoring
 - Public match summaries: team stats, MVP/SVP callouts, quitter penalties ("Hall of Shame")
 - Discord slash commands: `/score`, `/place`, `/top`, `/versus`, `/nemesis`, `/prey`, `/rconx`, `/tuners`
-- In-game chat commands: `!score`, `!roll`, `!versus`
+- In-game chat commands: `!score`, `!roll`, `!versus`, `!rr`, `!help`
 
 ## Requirements
 
@@ -33,10 +33,10 @@ Copy `.env.example` to `.env` and fill in the values:
 | `RCON_ADDRESS` | yes | Game server RCON host |
 | `RCON_PORT` | yes | Game server RCON port |
 | `RCON_PASSWORD` | yes | Game server RCON password |
-| `POP_CHANNEL` | no | Channel ID for the server population embed |
+| `POP_CHANNELS` | no | Comma-separated channel IDs for the server population embed |
 | `EVENTS_CHANNEL` | no | Channel ID for live game event messages and match results |
 | `PUBLIC_EVENTS_CHANNEL` | no | Channel ID for player-facing match summaries (scoreboard, MVP/SVP, hall of shame) |
-| `LEADERBOARDS_CHANNEL` | no | Channel ID for the persistent leaderboard embed |
+| `LEADERBOARDS_CHANNELS` | no | Comma-separated channel IDs for the persistent leaderboard embed |
 | `GAME_CMD_PREFIX` | no | In-game command prefix (default: `!`) |
 | `SKIRMISH_WIN_CAP` | no | Round wins needed to win a skirmish match (default: `10`) |
 
