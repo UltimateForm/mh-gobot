@@ -855,6 +855,133 @@ func handleRestartCommand(s *discordgo.Session, i *discordgo.InteractionCreate) 
 	}()
 }
 
+func handlePatchPlayerCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	options := i.ApplicationCommandData().Options
+	var query string
+	patch := data.PlayerPatch{}
+	for _, opt := range options {
+		switch opt.Name {
+		case "player":
+			query = opt.StringValue()
+		case "username":
+			v := opt.StringValue()
+			patch.Username = &v
+		case "score":
+			v := int(opt.IntValue())
+			patch.Score = &v
+		case "kills":
+			v := int(opt.IntValue())
+			patch.Kills = &v
+		case "deaths":
+			v := int(opt.IntValue())
+			patch.Deaths = &v
+		case "assists":
+			v := int(opt.IntValue())
+			patch.Assists = &v
+		}
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	ctx := context.Background()
+	player, err := resolvePlayer(query)
+	if err != nil {
+		var content string
+		if errors.Is(err, data.DbPlayerNotFound) {
+			content = fmt.Sprintf("❌ Player not found: `%s`", query)
+		} else {
+			log.Printf("patch_player resolve error: %v", err)
+			content = "❌ Error"
+		}
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+
+	if err := data.PatchPlayer(ctx, player.PlayerID, patch); err != nil {
+		log.Printf("patch_player error: %v", err)
+		content := "❌ Failed to patch player"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+
+	updated, err := data.ReadPlayer(ctx, player.PlayerID)
+	if err != nil {
+		content := "✅ Patched (failed to read back)"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+
+	embed := &discordgo.MessageEmbed{
+		Title:       "🔧 Player Patched",
+		Description: fmt.Sprintf("[%s](https://mordhau-scribe.com/player/%s)", updated.PlayerID, updated.PlayerID),
+		Color:       0x57F287,
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "Username", Value: fmt.Sprintf("`%s` → `%s`", player.Username, updated.Username), Inline: true},
+			{Name: "Score", Value: fmt.Sprintf("`%d` → `%d`", player.Score, updated.Score), Inline: true},
+			{Name: "Kills", Value: fmt.Sprintf("`%d` → `%d`", player.Kills, updated.Kills), Inline: true},
+			{Name: "Deaths", Value: fmt.Sprintf("`%d` → `%d`", player.Deaths, updated.Deaths), Inline: true},
+			{Name: "Assists", Value: fmt.Sprintf("`%d` → `%d`", player.Assists, updated.Assists), Inline: true},
+		},
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Embeds: &[]*discordgo.MessageEmbed{embed}})
+}
+
+func handleReactionsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	link := i.ApplicationCommandData().Options[0].StringValue()
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	parts := strings.Split(strings.TrimSpace(link), "/")
+	if len(parts) < 2 {
+		content := "❌ Invalid message link"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+	messageID := parts[len(parts)-1]
+	channelID := parts[len(parts)-2]
+
+	msg, err := s.ChannelMessage(channelID, messageID)
+	if err != nil {
+		log.Printf("reactions command: fetch message: %v", err)
+		content := "❌ Failed to fetch message"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+
+	if len(msg.Reactions) == 0 {
+		content := "No reactions on that message."
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+
+	var sb strings.Builder
+	for _, reaction := range msg.Reactions {
+		users, err := s.MessageReactions(channelID, messageID, reaction.Emoji.APIName(), 100, "", "")
+		if err != nil {
+			log.Printf("reactions command: fetch users for %s: %v", reaction.Emoji.Name, err)
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("**%s** (%d)\n", reaction.Emoji.Name, reaction.Count))
+		for _, u := range users {
+			sb.WriteString(fmt.Sprintf("- %s\n", u.Username))
+		}
+	}
+
+	body := sb.String()
+	if body == "" {
+		body = "No reactions found."
+	}
+	content := fmt.Sprintf("%s\n%s", link, body)
+	if len(content) > 2000 {
+		content = content[:2000]
+	}
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+}
+
 var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 	{
 		Definition: &discordgo.ApplicationCommand{
@@ -1152,5 +1279,32 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 			},
 		},
 		Handler: handleSetRrCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "patch_player",
+			Description:              "Patch a player's stats in the database",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{Type: discordgo.ApplicationCommandOptionString, Name: "player", Description: "PlayFab ID or player name", Required: true},
+				{Type: discordgo.ApplicationCommandOptionString, Name: "username", Description: "New username", Required: false},
+				{Type: discordgo.ApplicationCommandOptionInteger, Name: "score", Description: "New score", Required: false},
+				{Type: discordgo.ApplicationCommandOptionInteger, Name: "kills", Description: "New kills", Required: false},
+				{Type: discordgo.ApplicationCommandOptionInteger, Name: "deaths", Description: "New deaths", Required: false},
+				{Type: discordgo.ApplicationCommandOptionInteger, Name: "assists", Description: "New assists", Required: false},
+			},
+		},
+		Handler: handlePatchPlayerCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
+			Name:                     "reactions",
+			Description:              "List everyone who reacted to a message, grouped by emoji",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{Type: discordgo.ApplicationCommandOptionString, Name: "link", Description: "Discord message link", Required: true},
+			},
+		},
+		Handler: handleReactionsCommand,
 	},
 })
