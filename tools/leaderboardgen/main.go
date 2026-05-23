@@ -56,8 +56,17 @@ func main() {
 	// Load rank icons
 	rankIconCache := img.NewRankIconCache()
 
+	// Test harness: hardcode 2nd, 4th, 6th placements as decaying so we can
+	// preview the ▼ indicator without trusting last_match_played_at yet.
+	decayingIDs := make(map[string]bool)
+	for _, pos := range []int{1, 3, 5} {
+		if pos < len(players) {
+			decayingIDs[players[pos].PlayerID] = true
+		}
+	}
+
 	// Render leaderboard
-	imgReader, err := img.RenderLeaderboardImage(players, avatars, tierMap, rankIconCache)
+	imgReader, err := img.RenderLeaderboardImage(players, avatars, tierMap, rankIconCache, decayingIDs)
 	if err != nil {
 		log.Fatalf("failed to render leaderboard: %v", err)
 	}

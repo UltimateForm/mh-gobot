@@ -50,7 +50,9 @@ var lbCols = []lbCol{
 // map keyed by player_id). Missing avatars render as a plain rank chip.
 // tiers maps player_id to the player's current rank tier; nil entries (or
 // missing keys) render without a tier label. rankIcons provides rank icon images.
-func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]image.Image, tiers map[string]data.RankTier, rankIcons *RankIconCache) (io.Reader, error) {
+// decayingIDs marks player_ids that should be flagged as currently decaying
+// (▼ next to the score). Pass nil if no decay flagging is desired.
+func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]image.Image, tiers map[string]data.RankTier, rankIcons *RankIconCache, decayingIDs map[string]bool) (io.Reader, error) {
 	podiumCount := min(len(entries), 3)
 	standardCount := len(entries) - podiumCount
 
@@ -94,13 +96,13 @@ func RenderLeaderboardImage(entries []data.RankedPlayer, avatars map[string]imag
 	for i := range podiumCount {
 		cursorY += leaderboardPodiumGap / 2
 		tier, hasTier := tiers[entries[i].PlayerID]
-		drawPodiumRow(dc, cursorY, entries[i], avatars[entries[i].PlayerID], tier, hasTier, i, podiumFace, namePodiumFace, rankFace, tierPodiumFace, rankIcons, rankIconCenterX)
+		drawPodiumRow(dc, cursorY, entries[i], avatars[entries[i].PlayerID], tier, hasTier, i, podiumFace, namePodiumFace, rankFace, tierPodiumFace, rankIcons, rankIconCenterX, decayingIDs[entries[i].PlayerID])
 		cursorY += leaderboardPodiumH + leaderboardPodiumGap/2
 	}
 
 	for i := podiumCount; i < len(entries); i++ {
 		tier, hasTier := tiers[entries[i].PlayerID]
-		drawStandardRow(dc, cursorY, entries[i], tier, hasTier, i-podiumCount, baseFace, nameStandardFace, tierStandardFace, rankIcons, rankIconCenterX)
+		drawStandardRow(dc, cursorY, entries[i], tier, hasTier, i-podiumCount, baseFace, nameStandardFace, tierStandardFace, rankIcons, rankIconCenterX, decayingIDs[entries[i].PlayerID])
 		cursorY += leaderboardRowH
 	}
 
@@ -130,7 +132,7 @@ func drawHeader(dc *gg.Context, face font.Face) {
 	}
 }
 
-func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar image.Image, rank data.RankTier, hasRank bool, idx int, podiumFace, nameFace, rankFace, tierPodiumFace font.Face, rankIcons *RankIconCache, rankIconCenterX float64) {
+func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar image.Image, rank data.RankTier, hasRank bool, idx int, podiumFace, nameFace, rankFace, tierPodiumFace font.Face, rankIcons *RankIconCache, rankIconCenterX float64, decaying bool) {
 	dc.SetHexColor("#26282D")
 	dc.DrawRectangle(0, rowY, leaderboardW, leaderboardPodiumH)
 	dc.Fill()
@@ -189,6 +191,10 @@ func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar ima
 	dc.SetHexColor("#FFD700")
 	scoreCol := lbCols[3]
 	dc.DrawStringAnchored(util.HumanFormat(e.Score), leaderboardPadX+scoreCol.x+28, textY, 1, 0.5)
+	if decaying {
+		dc.SetHexColor("#ED4245")
+		dc.DrawStringAnchored("▼", leaderboardPadX+scoreCol.x+28+6, textY, 0, 0.5)
+	}
 
 	dc.SetHexColor("#DBDEE1")
 	for _, pair := range []struct {
@@ -203,7 +209,7 @@ func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar ima
 	}
 }
 
-func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank data.RankTier, hasRank bool, stripeIdx int, face, nameFace, tierStandardFace font.Face, rankIcons *RankIconCache, rankIconCenterX float64) {
+func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank data.RankTier, hasRank bool, stripeIdx int, face, nameFace, tierStandardFace font.Face, rankIcons *RankIconCache, rankIconCenterX float64, decaying bool) {
 	if stripeIdx%2 == 0 {
 		dc.SetHexColor("#2B2D31")
 	} else {
@@ -251,6 +257,13 @@ func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank dat
 			dc.DrawStringAnchored(name, x, textY, 0, 0.5)
 			dc.SetFontFace(face)
 		}
+	}
+
+	if decaying {
+		dc.SetHexColor("#ED4245")
+		scoreColX := leaderboardPadX + lbCols[3].x
+		dc.DrawStringAnchored("▼", scoreColX+28+6, textY, 0, 0.5)
+		dc.SetHexColor("#DBDEE1")
 	}
 
 	if hasRank && showRankNames {

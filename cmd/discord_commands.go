@@ -167,9 +167,18 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			placementStr = fmt.Sprintf(" - Placed #%d", placement.Rank)
 		}
 
+		decayStr := ""
+		if topN, terr := computeTopN(context.Background(), gameConfig); terr == nil && topN > 0 {
+			if cutoff, cerr := data.ReadDecayCutoffScore(context.Background(), topN); cerr == nil {
+				if game.IsDecaying(*player, gameConfig, cutoff, time.Now()) {
+					decayStr = "\n🩸 *Decaying — play a match to refresh*"
+				}
+			}
+		}
+
 		embed = &discordgo.MessageEmbed{
 			Title:       "🏆 Score",
-			Description: fmt.Sprintf("## 🎖️ %s - [%s](https://mordhau-scribe.com/player/%s)\n%s pts%s", rankName, player.Username, player.PlayerID, util.HumanFormat(player.Score), placementStr),
+			Description: fmt.Sprintf("## 🎖️ %s - [%s](https://mordhau-scribe.com/player/%s)\n%s pts%s%s", rankName, player.Username, player.PlayerID, util.HumanFormat(player.Score), placementStr, decayStr),
 			Color:       0xF1C40F,
 			Fields: []*discordgo.MessageEmbedField{
 				{Name: "📈 Next Rank", Value: fmt.Sprintf("```\n%s\n```", nextValue), Inline: false},
@@ -619,6 +628,10 @@ var configKeys = []string{
 	game.CfgMatchLossFactorCap,
 	game.CfgStartingPoints,
 	game.CfgQuitterPenaltyTeamMin,
+	game.CfgDecayEnabled,
+	game.CfgDecayGraceDays,
+	game.CfgDecayPctPerDay,
+	game.CfgDecayTopPct,
 }
 
 func handleTunersGetCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -835,6 +848,86 @@ func handleSetRrCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		verb = "paused"
 	}
 	content := fmt.Sprintf("✅ Ranking %s for **%s** (`%s`)", verb, player.Username, player.PlayerID)
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+}
+
+func handleDecayNowCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	dryRun := false
+	for _, opt := range i.ApplicationCommandData().Options {
+		if opt.Name == "dry_run" {
+			dryRun = opt.BoolValue()
+		}
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	ctx := context.Background()
+	now := time.Now()
+
+	if gameConfig.Get(game.CfgDecayEnabled) == 0 {
+		content := "⚠️ Decay is currently disabled (`decay_enabled = 0`)"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+
+	topN, err := computeTopN(ctx, gameConfig)
+	if err != nil {
+		log.Printf("decay_now: computeTopN error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed(err.Error())},
+		})
+		return
+	}
+	if topN == 0 {
+		content := "No active players in the eligible top slice"
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+
+	graceDays := gameConfig.Get(game.CfgDecayGraceDays)
+	pct := gameConfig.Get(game.CfgDecayPctPerDay)
+	inactiveCutoff := now.Add(-time.Duration(graceDays * float64(24*time.Hour)))
+
+	if dryRun {
+		candidates, err := data.ReadDecayCandidates(ctx, topN, inactiveCutoff)
+		if err != nil {
+			log.Printf("decay_now dry_run error: %v", err)
+			s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+				Embeds: &[]*discordgo.MessageEmbed{errorEmbed(err.Error())},
+			})
+			return
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "**Dry run** — would decay %d/%d eligible top players by %.1f%% (inactive since <t:%d:R>):\n", len(candidates), topN, pct*100, inactiveCutoff.Unix())
+		if len(candidates) == 0 {
+			b.WriteString("_(no one currently meets the criteria)_")
+		} else {
+			for _, p := range candidates {
+				lost := int(float64(p.Score) * pct)
+				fmt.Fprintf(&b, "- %s (`%s`) — %s pts → %s pts (-%s)\n", p.Username, p.PlayerID, util.HumanFormat(p.Score), util.HumanFormat(p.Score-lost), util.HumanFormat(lost))
+			}
+		}
+		content := b.String()
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+
+	result, err := runDecayCore(ctx, gameConfig, now)
+	if err != nil {
+		log.Printf("decay_now error: %v", err)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Embeds: &[]*discordgo.MessageEmbed{errorEmbed(err.Error())},
+		})
+		return
+	}
+	if result.Skipped != "" {
+		content := fmt.Sprintf("Decay run skipped: %s", result.Skipped)
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
+		return
+	}
+	content := fmt.Sprintf("🩸 Applied **%.1f%% decay** to **%d/%d** eligible top players", pct*100, result.RowsAffected, result.TopN)
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content})
 }
 
@@ -1092,6 +1185,22 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 	},
 	{
 		Definition: &discordgo.ApplicationCommand{
+			Name:                     "decay_now",
+			Description:              "Manually trigger a score decay tick (bypasses the 24h gap)",
+			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Type:        discordgo.ApplicationCommandOptionBoolean,
+					Name:        "dry_run",
+					Description: "If true, list who would be decayed without writing",
+					Required:    false,
+				},
+			},
+		},
+		Handler: handleDecayNowCommand,
+	},
+	{
+		Definition: &discordgo.ApplicationCommand{
 			Name:                     "rconx",
 			Description:              "Execute an RCON command",
 			DefaultMemberPermissions: &[]int64{discordgo.PermissionAdministrator}[0],
@@ -1192,6 +1301,10 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 						{Name: game.CfgMatchLossFactorCap, Value: game.CfgMatchLossFactorCap},
 						{Name: game.CfgStartingPoints, Value: game.CfgStartingPoints},
 						{Name: game.CfgQuitterPenaltyTeamMin, Value: game.CfgQuitterPenaltyTeamMin},
+						{Name: game.CfgDecayEnabled, Value: game.CfgDecayEnabled},
+						{Name: game.CfgDecayGraceDays, Value: game.CfgDecayGraceDays},
+						{Name: game.CfgDecayPctPerDay, Value: game.CfgDecayPctPerDay},
+						{Name: game.CfgDecayTopPct, Value: game.CfgDecayTopPct},
 					},
 				},
 				{

@@ -108,6 +108,7 @@ func Start() {
 		if persistentLeaderboard != nil {
 			persistentLeaderboard.Run(appCtx, dg)
 		}
+		go runDecayLoop(appCtx, gameConfig)
 	})
 
 	err = dg.Open()
@@ -146,7 +147,19 @@ func renderLeaderboardEmbed(t time.Time) (discord.RenderResult, error) {
 		}
 	}
 
-	imgReader, err := img.RenderLeaderboardImage(players, avatars, tierMap, rankIconCache)
+	decayingIDs := make(map[string]bool)
+	if topN, terr := computeTopN(ctx, gameConfig); terr == nil && topN > 0 {
+		if cutoff, cerr := data.ReadDecayCutoffScore(ctx, topN); cerr == nil {
+			now := t
+			for _, p := range players {
+				if game.IsDecaying(p.Player, gameConfig, cutoff, now) {
+					decayingIDs[p.PlayerID] = true
+				}
+			}
+		}
+	}
+
+	imgReader, err := img.RenderLeaderboardImage(players, avatars, tierMap, rankIconCache, decayingIDs)
 	if err != nil {
 		return discord.RenderResult{}, err
 	}

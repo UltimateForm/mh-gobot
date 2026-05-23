@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 func UpsertPlayer(ctx context.Context, player Player, startingPoints int) error {
@@ -47,7 +48,7 @@ ON CONFLICT(player_id) DO UPDATE SET
 
 func scanPlayer(row *sql.Row) (*Player, error) {
 	p := &Player{}
-	err := row.Scan(&p.PlayerID, &p.Username, &p.RawScore, &p.Score, &p.Kills, &p.Deaths, &p.Assists, &p.RoundsWon, &p.MatchesWon, &p.ScoringPaused)
+	err := row.Scan(&p.PlayerID, &p.Username, &p.RawScore, &p.Score, &p.Kills, &p.Deaths, &p.Assists, &p.RoundsWon, &p.MatchesWon, &p.ScoringPaused, &p.LastMatchPlayedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, DbPlayerNotFound
 	}
@@ -58,13 +59,13 @@ func scanPlayer(row *sql.Row) (*Player, error) {
 }
 
 func ReadPlayer(ctx context.Context, playerID string) (*Player, error) {
-	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE player_id = ?`, playerID)
+	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, last_match_played_at FROM players WHERE player_id = ?`, playerID)
 	return scanPlayer(row)
 }
 
 func ReadPlayerByName(ctx context.Context, name string) (*Player, error) {
 	row := db.QueryRowContext(ctx, `
-SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused
+SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, last_match_played_at
 FROM players
 WHERE username LIKE ?
 ORDER BY
@@ -85,7 +86,7 @@ var TopCategory = map[string]string{
 }
 
 func ReadTopPlayers(ctx context.Context, limit int, column string) ([]RankedPlayer, error) {
-	query := fmt.Sprintf(`SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, ROW_NUMBER() OVER (ORDER BY %s DESC) as rank FROM players ORDER BY %s DESC LIMIT ?`, column, column)
+	query := fmt.Sprintf(`SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, last_match_played_at, ROW_NUMBER() OVER (ORDER BY %s DESC) as rank FROM players ORDER BY %s DESC LIMIT ?`, column, column)
 	rows, err := db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, errors.Join(DbPlayerReadError, err)
@@ -94,7 +95,7 @@ func ReadTopPlayers(ctx context.Context, limit int, column string) ([]RankedPlay
 	players := make([]RankedPlayer, 0, limit)
 	for rows.Next() {
 		var rp RankedPlayer
-		if err := rows.Scan(&rp.PlayerID, &rp.Username, &rp.RawScore, &rp.Score, &rp.Kills, &rp.Deaths, &rp.Assists, &rp.RoundsWon, &rp.MatchesWon, &rp.ScoringPaused, &rp.Rank); err != nil {
+		if err := rows.Scan(&rp.PlayerID, &rp.Username, &rp.RawScore, &rp.Score, &rp.Kills, &rp.Deaths, &rp.Assists, &rp.RoundsWon, &rp.MatchesWon, &rp.ScoringPaused, &rp.LastMatchPlayedAt, &rp.Rank); err != nil {
 			return nil, errors.Join(DbPlayerReadError, err)
 		}
 		players = append(players, rp)
@@ -125,7 +126,7 @@ func ReadPlayerPlacement(ctx context.Context, playerID string) (*PlayerPlacement
 	}
 
 	offset := max(0, rank-5)
-	rows, err := tx.QueryContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, ROW_NUMBER() OVER (ORDER BY score DESC) as rank FROM players ORDER BY score DESC LIMIT 9 OFFSET ?`, offset)
+	rows, err := tx.QueryContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, last_match_played_at, ROW_NUMBER() OVER (ORDER BY score DESC) as rank FROM players ORDER BY score DESC LIMIT 9 OFFSET ?`, offset)
 	if err != nil {
 		return nil, errors.Join(DbPlayerReadError, err)
 	}
@@ -134,7 +135,7 @@ func ReadPlayerPlacement(ctx context.Context, playerID string) (*PlayerPlacement
 	snippet := make([]RankedPlayer, 0, 9)
 	for rows.Next() {
 		var rp RankedPlayer
-		if err := rows.Scan(&rp.PlayerID, &rp.Username, &rp.RawScore, &rp.Score, &rp.Kills, &rp.Deaths, &rp.Assists, &rp.RoundsWon, &rp.MatchesWon, &rp.ScoringPaused, &rp.Rank); err != nil {
+		if err := rows.Scan(&rp.PlayerID, &rp.Username, &rp.RawScore, &rp.Score, &rp.Kills, &rp.Deaths, &rp.Assists, &rp.RoundsWon, &rp.MatchesWon, &rp.ScoringPaused, &rp.LastMatchPlayedAt, &rp.Rank); err != nil {
 			return nil, errors.Join(DbPlayerReadError, err)
 		}
 		snippet = append(snippet, rp)
@@ -276,12 +277,58 @@ func ReadAggregates(ctx context.Context) (*PlayerAggregates, error) {
 }
 
 func ReadBottomPlayer(ctx context.Context) (*Player, error) {
-	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE score > 0 ORDER BY score ASC LIMIT 1`)
+	row := db.QueryRowContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, last_match_played_at FROM players WHERE score > 0 ORDER BY score ASC LIMIT 1`)
 	return scanPlayer(row)
 }
 
-func ReadPausedPlayers(ctx context.Context) ([]Player, error) {
-	rows, err := db.QueryContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused FROM players WHERE scoring_paused = 1 ORDER BY username ASC`)
+func CountActivePlayers(ctx context.Context) (int, error) {
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM players WHERE score > 0`).Scan(&n)
+	if err != nil {
+		return 0, errors.Join(DbPlayerReadError, err)
+	}
+	return n, nil
+}
+
+// ReadDecayCutoffScore returns the score of the lowest player still inside the
+// top topN slice (ordered by score DESC). Players with score equal to or above
+// this value are within the decay-eligible range. Returns 0 if topN <= 0 or the
+// table holds fewer than topN active players.
+func ReadDecayCutoffScore(ctx context.Context, topN int) (int, error) {
+	if topN <= 0 {
+		return 0, nil
+	}
+	var score int
+	err := db.QueryRowContext(ctx, `SELECT score FROM players WHERE score > 0 ORDER BY score DESC LIMIT 1 OFFSET ?`, topN-1).Scan(&score)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, errors.Join(DbPlayerReadError, err)
+	}
+	return score, nil
+}
+
+// ReadDecayCandidates returns players currently eligible for decay (top topN by
+// score, score > 0, last_match_played_at < inactiveCutoff). Used for /decay_now
+// dry-run.
+func ReadDecayCandidates(ctx context.Context, topN int, inactiveCutoff time.Time) ([]Player, error) {
+	if topN <= 0 {
+		return nil, nil
+	}
+	rows, err := db.QueryContext(ctx, `
+WITH eligible AS (
+    SELECT player_id FROM players
+    WHERE score > 0
+    ORDER BY score DESC
+    LIMIT ?
+)
+SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, last_match_played_at
+FROM players
+WHERE player_id IN (SELECT player_id FROM eligible)
+  AND last_match_played_at IS NOT NULL
+  AND last_match_played_at < ?
+ORDER BY score DESC`, topN, inactiveCutoff)
 	if err != nil {
 		return nil, errors.Join(DbPlayerReadError, err)
 	}
@@ -289,7 +336,49 @@ func ReadPausedPlayers(ctx context.Context) ([]Player, error) {
 	players := []Player{}
 	for rows.Next() {
 		var p Player
-		if err := rows.Scan(&p.PlayerID, &p.Username, &p.RawScore, &p.Score, &p.Kills, &p.Deaths, &p.Assists, &p.RoundsWon, &p.MatchesWon, &p.ScoringPaused); err != nil {
+		if err := rows.Scan(&p.PlayerID, &p.Username, &p.RawScore, &p.Score, &p.Kills, &p.Deaths, &p.Assists, &p.RoundsWon, &p.MatchesWon, &p.ScoringPaused, &p.LastMatchPlayedAt); err != nil {
+			return nil, errors.Join(DbPlayerReadError, err)
+		}
+		players = append(players, p)
+	}
+	return players, nil
+}
+
+// DecayTopPlayers applies a single decay tick to all eligible players in a
+// single CTE-driven UPDATE. Returns the number of rows updated.
+func DecayTopPlayers(ctx context.Context, pct float64, topN int, inactiveCutoff time.Time) (int64, error) {
+	if topN <= 0 {
+		return 0, nil
+	}
+	res, err := db.ExecContext(ctx, `
+WITH eligible AS (
+    SELECT player_id FROM players
+    WHERE score > 0
+    ORDER BY score DESC
+    LIMIT ?
+)
+UPDATE players
+SET score = CAST(score * (1.0 - ?) AS INTEGER)
+WHERE player_id IN (SELECT player_id FROM eligible)
+  AND last_match_played_at IS NOT NULL
+  AND last_match_played_at < ?`, topN, pct, inactiveCutoff)
+	if err != nil {
+		return 0, errors.Join(DbPlayerUpsertError, err)
+	}
+	affected, _ := res.RowsAffected()
+	return affected, nil
+}
+
+func ReadPausedPlayers(ctx context.Context) ([]Player, error) {
+	rows, err := db.QueryContext(ctx, `SELECT player_id, username, raw_score, score, kills, deaths, assists, rounds_won, matches_won, scoring_paused, last_match_played_at FROM players WHERE scoring_paused = 1 ORDER BY username ASC`)
+	if err != nil {
+		return nil, errors.Join(DbPlayerReadError, err)
+	}
+	defer rows.Close()
+	players := []Player{}
+	for rows.Next() {
+		var p Player
+		if err := rows.Scan(&p.PlayerID, &p.Username, &p.RawScore, &p.Score, &p.Kills, &p.Deaths, &p.Assists, &p.RoundsWon, &p.MatchesWon, &p.ScoringPaused, &p.LastMatchPlayedAt); err != nil {
 			return nil, errors.Join(DbPlayerReadError, err)
 		}
 		players = append(players, p)

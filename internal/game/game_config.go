@@ -20,6 +20,10 @@ const (
 	CfgStartingPoints        = "starting_points"
 	CfgQuitterPenaltyTeamMin = "quitter_penalty_team_min"
 	CfgRrEnabled             = "rr_enabled"
+	CfgDecayEnabled          = "decay_enabled"
+	CfgDecayGraceDays        = "decay_grace_days"
+	CfgDecayPctPerDay        = "decay_pct_per_day"
+	CfgDecayTopPct           = "decay_top_pct"
 )
 
 var gameConfigDefaults = map[string]float64{
@@ -31,6 +35,10 @@ var gameConfigDefaults = map[string]float64{
 	CfgStartingPoints:        0,
 	CfgQuitterPenaltyTeamMin: 4,
 	CfgRrEnabled:             1,
+	CfgDecayEnabled:          1,
+	CfgDecayGraceDays:        2,
+	CfgDecayPctPerDay:        0.05,
+	CfgDecayTopPct:           0.40,
 }
 
 var GameConfigDescriptions = map[string]string{
@@ -42,6 +50,10 @@ var GameConfigDescriptions = map[string]string{
 	CfgStartingPoints:        "Score awarded to brand-new players on first insert. Does not affect raw_score. 0 means new players start at 0.",
 	CfgQuitterPenaltyTeamMin: "Minimum size of the losing team (including the quitter) for the quit penalty to apply. Quits from teams smaller than this are penalty-free, since natural attrition in low-pop matches shouldn't be punished. Set to 0 to disable the floor.",
 	CfgRrEnabled:             "Whether players can use the in-game !rr command to pause/resume their own ranking. 1 = enabled, 0 = disabled. Admins can still use /set_rr regardless.",
+	CfgDecayEnabled:          "Whether the daily score decay job runs. 1 = enabled, 0 = disabled (no decay applied, status indicator hidden).",
+	CfgDecayGraceDays:        "Days of inactivity (no match played) before decay starts kicking in. e.g. 2 = decay starts on day 3 of inactivity.",
+	CfgDecayPctPerDay:        "Fraction of current score lost per daily decay tick (0.05 = 5%). Fixed rate; does not compound based on how long they've been inactive — just one tick per day.",
+	CfgDecayTopPct:           "Top fraction of players (by score, score > 0) eligible for decay (0.40 = top 40%). Players falling below this cutoff naturally stop decaying.",
 }
 
 func GameConfigDefaults() map[string]float64 {

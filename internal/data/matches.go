@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 func InsertMatch(ctx context.Context, m Match, participants []MatchParticipant) (int64, error) {
@@ -44,6 +45,20 @@ func InsertMatch(ctx context.Context, m Match, participants []MatchParticipant) 
 	for _, p := range participants {
 		if _, err := stmt.ExecContext(ctx, matchID, p.PlayerID, p.Team, p.RoundsWon); err != nil {
 			return 0, fmt.Errorf("insert participant %s: %w", p.PlayerID, err)
+		}
+	}
+
+	if len(participants) > 0 {
+		placeholders := make([]string, len(participants))
+		args := make([]any, 0, len(participants)+1)
+		args = append(args, m.EndedAt)
+		for i, p := range participants {
+			placeholders[i] = "?"
+			args = append(args, p.PlayerID)
+		}
+		updateSQL := fmt.Sprintf(`UPDATE players SET last_match_played_at = ? WHERE player_id IN (%s)`, strings.Join(placeholders, ","))
+		if _, err := tx.ExecContext(ctx, updateSQL, args...); err != nil {
+			return 0, fmt.Errorf("update last_match_played_at: %w", err)
 		}
 	}
 

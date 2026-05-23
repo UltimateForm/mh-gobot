@@ -9,12 +9,13 @@ type Player struct {
 	Score    int
 	// TODO: consider (AT THE VERY LEAST BRO) removing kills/deaths since with ledger we are achieving that already
 	// data redundancy kinda jumps to the eye
-	Kills         int
-	Deaths        int
-	Assists       int
-	RoundsWon     int
-	MatchesWon    int
-	ScoringPaused bool
+	Kills             int
+	Deaths            int
+	Assists           int
+	RoundsWon         int
+	MatchesWon        int
+	ScoringPaused     bool
+	LastMatchPlayedAt *time.Time
 }
 
 type RankedPlayer struct {
