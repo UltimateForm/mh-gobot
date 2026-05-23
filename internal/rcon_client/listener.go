@@ -99,26 +99,30 @@ func NewListener(uri, password string, listenTypes []ListenType) (*ListenerClien
 }
 
 func (l *ListenerClient) reconnect() error {
-	l.client.Close()
+	old := l.client
 	base, err := New(l.uri)
 	if err != nil {
 		return err
 	}
 	success, err := base.Authenticate(l.password)
 	if err != nil {
+		base.Close()
 		return err
 	}
 	if !success {
+		base.Close()
 		return errors.New("authentication failed")
 	}
 	for _, t := range l.listenTypes {
 		resp, err := base.Execute("listen " + string(t))
 		if err != nil {
+			base.Close()
 			return errors.Join(errors.New("failed to re-register listener "+string(t)), err)
 		}
 		l.logger.Printf("re-registered listen %s: %s", t, resp)
 	}
 	l.client = base
+	old.Close()
 	return nil
 }
 
@@ -200,6 +204,9 @@ func (l *ListenerClient) stream(ctx context.Context) {
 		packets := packet.CreateResponseChannel(l.client, connCtx)
 		for pkt := range packets {
 			if pkt.Error != nil {
+				if errors.Is(pkt.Error, net.ErrClosed) {
+					break
+				}
 				l.logger.Printf("stream error: %v", pkt.Error)
 				if netErr, ok := pkt.Error.(net.Error); ok && netErr.Timeout() {
 					l.logger.Println("timeout, retrying...")
@@ -253,6 +260,7 @@ func (l *ListenerClient) keepalive(ctx context.Context, cancelConn context.Cance
 			l.client.mu.Unlock()
 			if err != nil {
 				l.logger.Printf("keepalive write error: %v", err)
+				l.client.Close()
 				cancelConn()
 				return
 			}
@@ -262,6 +270,7 @@ func (l *ListenerClient) keepalive(ctx context.Context, cancelConn context.Cance
 			case <-l.aliveAcksCh:
 			case <-time.After(keepaliveAckTimeoutSecs * time.Second):
 				l.logger.Println("keepalive ack timeout, connection presumed dead")
+				l.client.Close()
 				cancelConn()
 				return
 			}

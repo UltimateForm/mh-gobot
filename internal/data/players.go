@@ -218,6 +218,53 @@ func ReadPlayerScores(ctx context.Context, playerIDs []string) (map[string]int, 
 	return result, nil
 }
 
+type PlayerPatch struct {
+	Username *string
+	Score    *int
+	Kills    *int
+	Deaths   *int
+	Assists  *int
+}
+
+func PatchPlayer(ctx context.Context, playerID string, patch PlayerPatch) error {
+	var setClauses []string
+	var args []interface{}
+	if patch.Username != nil {
+		setClauses = append(setClauses, "username = ?")
+		args = append(args, *patch.Username)
+	}
+	if patch.Score != nil {
+		setClauses = append(setClauses, "score = ?")
+		args = append(args, *patch.Score)
+	}
+	if patch.Kills != nil {
+		setClauses = append(setClauses, "kills = ?")
+		args = append(args, *patch.Kills)
+	}
+	if patch.Deaths != nil {
+		setClauses = append(setClauses, "deaths = ?")
+		args = append(args, *patch.Deaths)
+	}
+	if patch.Assists != nil {
+		setClauses = append(setClauses, "assists = ?")
+		args = append(args, *patch.Assists)
+	}
+	if len(setClauses) == 0 {
+		return nil
+	}
+	args = append(args, playerID)
+	query := fmt.Sprintf("UPDATE players SET %s WHERE player_id = ?", strings.Join(setClauses, ", "))
+	res, err := db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return errors.Join(DbPlayerUpsertError, err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return DbPlayerNotFound
+	}
+	return nil
+}
+
 func ReadAggregates(ctx context.Context) (*PlayerAggregates, error) {
 	var agg PlayerAggregates
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(kills), 0), COALESCE(SUM(deaths), 0), COALESCE(SUM(assists), 0), COALESCE(AVG(score), 0) FROM players`).

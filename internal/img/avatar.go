@@ -118,21 +118,11 @@ func (c *AvatarCache) Get(ctx context.Context, playFabID string) image.Image {
 // the default placeholder (or nil if no placeholder is configured).
 func (c *AvatarCache) GetMany(ctx context.Context, ids []string) map[string]image.Image {
 	out := make(map[string]image.Image, len(ids))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
 	for _, id := range ids {
-		wg.Add(1)
-		go func(id string) {
-			defer wg.Done()
-			fctx, cancel := context.WithTimeout(ctx, avatarFetchTimeout)
-			defer cancel()
-			img := c.Get(fctx, id)
-			mu.Lock()
-			out[id] = img
-			mu.Unlock()
-		}(id)
+		fctx, cancel := context.WithTimeout(ctx, avatarFetchTimeout)
+		out[id] = c.Get(fctx, id)
+		cancel()
 	}
-	wg.Wait()
 	return out
 }
 

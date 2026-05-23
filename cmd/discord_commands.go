@@ -806,7 +806,6 @@ func handleSetRrCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	})
-
 	player, err := resolvePlayer(query)
 	if errors.Is(err, data.DbPlayerNotFound) {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{

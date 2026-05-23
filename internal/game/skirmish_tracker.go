@@ -198,9 +198,10 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 	perf := p.Rounds[t.currentRound]
 	if e.IsAssist {
 		perf.Assists++
-	} else {
-		perf.Kills++
+		p.Rounds[t.currentRound] = perf
+		return
 	}
+	perf.Kills++
 	perf.KilledIds = append(perf.KilledIds, e.KilledID)
 	p.Rounds[t.currentRound] = perf
 
