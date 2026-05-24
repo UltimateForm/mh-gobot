@@ -24,6 +24,8 @@ const (
 	CfgDecayGraceDays        = "decay_grace_days"
 	CfgDecayPctPerDay        = "decay_pct_per_day"
 	CfgDecayTopPct           = "decay_top_pct"
+	CfgTeamBalanceMinFactor  = "team_balance_min_factor"
+	CfgTeamBalanceMaxFactor  = "team_balance_max_factor"
 )
 
 var gameConfigDefaults = map[string]float64{
@@ -39,6 +41,8 @@ var gameConfigDefaults = map[string]float64{
 	CfgDecayGraceDays:        2,
 	CfgDecayPctPerDay:        0.05,
 	CfgDecayTopPct:           0.40,
+	CfgTeamBalanceMinFactor:  0.30,
+	CfgTeamBalanceMaxFactor:  1.00,
 }
 
 var GameConfigDescriptions = map[string]string{
@@ -54,6 +58,8 @@ var GameConfigDescriptions = map[string]string{
 	CfgDecayGraceDays:        "Days of inactivity (no match played) before decay starts kicking in. e.g. 2 = decay starts on day 3 of inactivity.",
 	CfgDecayPctPerDay:        "Fraction of current score lost per daily decay tick (0.05 = 5%). Fixed rate; does not compound based on how long they've been inactive — just one tick per day.",
 	CfgDecayTopPct:           "Top fraction of players (by score, score > 0) eligible for decay (0.40 = top 40%). Players falling below this cutoff naturally stop decaying.",
+	CfgTeamBalanceMinFactor:  "Floor for the team-balance loss reduction factor (0.30 = losses never reduced below 30% of normal). Prevents total zeroing of losses even in extreme skill mismatches.",
+	CfgTeamBalanceMaxFactor:  "Ceiling for the team-balance loss reduction factor (1.00 = no cap). Reduce below 1.0 to apply a universal discount even when teams are evenly matched.",
 }
 
 func GameConfigDefaults() map[string]float64 {

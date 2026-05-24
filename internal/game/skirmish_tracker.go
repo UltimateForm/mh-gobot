@@ -24,6 +24,24 @@ const (
 
 const killFactorFloor = 0.05
 
+var matchSizeMultipliers = map[int]float64{
+	1: 0.00,
+	2: 0.10,
+	3: 0.45,
+	4: 0.80,
+	5: 1.00,
+	6: 0.90,
+	7: 0.50,
+	8: 0.50,
+}
+
+func matchSizeMult(teamSize int) float64 {
+	if m, ok := matchSizeMultipliers[min(teamSize, 8)]; ok {
+		return m
+	}
+	return matchSizeMultipliers[8]
+}
+
 type roundResult struct {
 	playerID   string
 	username   string
@@ -358,6 +376,8 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	// Loss calculation and match-end logic
 	losses := make([]MatchLossCalc, 0)
 	winBonuses := make([]matchWinResult, 0)
+	sizeMult := 1.0
+	teamBalanceFactor := 1.0
 	if isMatchOver {
 		t.mu.Lock()
 		totalRounds := t.currentRound
@@ -367,6 +387,31 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		quittersCopy := make([]quitterRecord, len(t.quitters))
 		copy(quittersCopy, t.quitters)
 		t.mu.Unlock()
+
+		matchSize := min(len(winEntries), len(loseEntries))
+		sizeMult = matchSizeMult(matchSize)
+
+		avgTeamScore := func(entries []*parse.ScoreboardEntry) float64 {
+			sum, n := 0, 0
+			for _, e := range entries {
+				if s := playerScores[e.PlayerID]; s > 0 {
+					sum += s
+					n++
+				}
+			}
+			if n == 0 {
+				return 0
+			}
+			return float64(sum) / float64(n)
+		}
+		avgWin := avgTeamScore(winEntries)
+		avgLose := avgTeamScore(loseEntries)
+		if avgWin > 0 {
+			minF := t.gameConfig.Get(CfgTeamBalanceMinFactor)
+			maxF := t.gameConfig.Get(CfgTeamBalanceMaxFactor)
+			teamBalanceFactor = math.Min(math.Max(avgLose/avgWin, minF), maxF)
+		}
+
 
 		for _, entry := range loseEntries {
 			playerScore := playerScores[entry.PlayerID]
@@ -388,7 +433,7 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 
 			participationRatio := float64(roundsPlayed) / float64(totalRounds)
 			calc.ParticipationRatio = participationRatio
-			adjustedLoss := int(math.Round(float64(calc.ActualLoss) * participationRatio))
+			adjustedLoss := int(math.Round(float64(calc.ActualLoss) * participationRatio * sizeMult * teamBalanceFactor))
 			adjustedLoss = max(min(adjustedLoss, playerScore), 0) // forgot why min(adjustedLoss, playerScore)
 			calc.ActualLoss = adjustedLoss
 
@@ -506,7 +551,7 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	if dc != nil && t.eventsChannel != "" {
 		go t.sendRoundEmbed(dc, roundNum, winningTeam, len(winEntries), len(loseEntries), winResults)
 		if isMatchOver {
-			go t.sendMatchEndEmbed(dc, winningTeam, len(winEntries), len(loseEntries), losses, winBonuses, teamScoresCopy)
+			go t.sendMatchEndEmbed(dc, winningTeam, len(winEntries), len(loseEntries), losses, winBonuses, teamScoresCopy, sizeMult, teamBalanceFactor)
 		}
 	}
 }
@@ -700,7 +745,7 @@ func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, wi
 	}
 }
 
-func (t *SkirmishTracker) sendMatchEndEmbed(dc *discordgo.Session, winningTeam int, winSize int, loseSize int, losses []MatchLossCalc, winBonuses []matchWinResult, teamScores map[int]float64) {
+func (t *SkirmishTracker) sendMatchEndEmbed(dc *discordgo.Session, winningTeam int, winSize int, loseSize int, losses []MatchLossCalc, winBonuses []matchWinResult, teamScores map[int]float64, sizeMult float64, teamBalanceFactor float64) {
 	color := 0x57F287
 	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
 	maxSizeFactor := t.gameConfig.Get(CfgSkirmishSizeFactorCap)
@@ -726,9 +771,9 @@ func (t *SkirmishTracker) sendMatchEndEmbed(dc *discordgo.Session, winningTeam i
 	scoreFactor := 0.5 + 0.5*(teamScores[winningTeam]-losingScore)/math.Max(teamScores[winningTeam], 1.0)
 
 	title := fmt.Sprintf("🏆 Match over - Team %d wins!", winningTeam)
-	description := fmt.Sprintf("**Score:** %.0f – %.0f | **Imbalance:** %.2f/%.2f (loss reduction) | **Margin:** %.2f\n**Mods:** loss_ratio=%.2f | max_factor=%.2f | **K:** %.0f",
+	description := fmt.Sprintf("**Score:** %.0f – %.0f | **Team size:** %.2f/%.2f (loss reduction) | **Margin:** %.2f\n**Mods:** loss_ratio=%.2f | max_factor=%.2f | **K:** %.0f | **Match size:** %.2f | **Rank balance:** %.2f",
 		teamScores[winningTeam], losingScore, winSizeFactor, loseSizeFactor, scoreFactor,
-		lossRatio, lossFactorCap, avgK)
+		lossRatio, lossFactorCap, avgK, sizeMult, teamBalanceFactor)
 
 	fields := []*discordgo.MessageEmbedField{}
 

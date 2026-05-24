@@ -632,6 +632,8 @@ var configKeys = []string{
 	game.CfgDecayGraceDays,
 	game.CfgDecayPctPerDay,
 	game.CfgDecayTopPct,
+	game.CfgTeamBalanceMinFactor,
+	game.CfgTeamBalanceMaxFactor,
 }
 
 func handleTunersGetCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -729,6 +731,16 @@ func handleStatsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	k := weightProvider.K()
 
+	decayCutoffStr := "`off`"
+	if gameConfig.Get(game.CfgDecayEnabled) != 0 {
+		decayCutoffStr = "`-`"
+		if topN, terr := computeTopN(ctx, gameConfig); terr == nil && topN > 0 {
+			if cutoff, cerr := data.ReadDecayCutoffScore(ctx, topN); cerr == nil && cutoff > 0 {
+				decayCutoffStr = fmt.Sprintf("**%s pts**", util.HumanFormat(cutoff))
+			}
+		}
+	}
+
 	embed := &discordgo.MessageEmbed{
 		Title: "📊 Server Stats",
 		Color: 0x5865F2,
@@ -741,6 +753,7 @@ func handleStatsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			{Name: "🤝 Total Assists", Value: fmt.Sprintf("```ansi\n\u001b[36m%s\u001b[0m\n```", util.HumanFormat(agg.TotalAssists)), Inline: true},
 			{Name: "🏆 Top Player", Value: topStr, Inline: true},
 			{Name: "🥄 Bottom Player", Value: bottomStr, Inline: true},
+			{Name: "🩸 Decay Threshold", Value: decayCutoffStr, Inline: true},
 		},
 	}
 
@@ -1305,6 +1318,8 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 						{Name: game.CfgDecayGraceDays, Value: game.CfgDecayGraceDays},
 						{Name: game.CfgDecayPctPerDay, Value: game.CfgDecayPctPerDay},
 						{Name: game.CfgDecayTopPct, Value: game.CfgDecayTopPct},
+						{Name: game.CfgTeamBalanceMinFactor, Value: game.CfgTeamBalanceMinFactor},
+						{Name: game.CfgTeamBalanceMaxFactor, Value: game.CfgTeamBalanceMaxFactor},
 					},
 				},
 				{
