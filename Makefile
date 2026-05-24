@@ -11,7 +11,7 @@ share-db:
 	podman unshare chown -R $$(id -u):$$(id -g) ~/.mh-gobot
 
 unshare-db:
-	podman unshare chown -R $$(id -u):$$(id -g) ~/.mh-gobot
+	podman unshare chown -R 0:0 ~/.mh-gobot
 
 
 
