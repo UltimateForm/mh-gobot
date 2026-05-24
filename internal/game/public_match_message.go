@@ -8,17 +8,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/UltimateForm/mh-gobot/internal/parse"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
 
 type playerTableRow struct {
-	name    string
-	kills   int
-	deaths  int
-	assists int
-	partPct int
-	total   int
+	playerID string
+	name     string
+	kills    int
+	deaths   int
+	assists  int
+	partPct  int
+	total    int
 }
 
 func (t *SkirmishTracker) sendPublicMatchEndMessage(
@@ -27,6 +29,7 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 	totalRounds int,
 	players map[string]*SkirmishPlayer,
 	quitters []quitterRecord,
+	scoreboardByID map[string]*parse.ScoreboardEntry,
 ) {
 	if dc == nil || t.publicEventsChannel == "" {
 		return
@@ -34,17 +37,26 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 
 	// Build per-team rows
 	var team1, team2 []playerTableRow
-	for _, p := range players {
+	for id, p := range players {
 		if p.Team == 0 {
 			continue
 		}
+		kills := p.GetTotalKills()
+		deaths := p.GetTotalDeaths()
+		assists := p.GetTotalAssists()
+		if sb, ok := scoreboardByID[id]; ok {
+			kills = sb.Kills
+			deaths = sb.Deaths
+			assists = sb.Assists
+		}
 		row := playerTableRow{
-			name:    p.Name,
-			kills:   p.GetTotalKills(),
-			deaths:  p.GetTotalDeaths(),
-			assists: p.GetTotalAssists(),
-			partPct: int(math.Round(100.0 * p.GetParticipationRatio(totalRounds))),
-			total:   p.GetTotalScore(),
+			playerID: id,
+			name:     p.Name,
+			kills:    kills,
+			deaths:   deaths,
+			assists:  assists,
+			partPct:  int(math.Round(100.0 * p.GetParticipationRatio(totalRounds))),
+			total:    p.GetTotalScore(),
 		}
 		if p.Team == 1 {
 			team1 = append(team1, row)
@@ -60,19 +72,22 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 	all := slices.Concat(team1, team2)
 	sort.Slice(all, func(i, j int) bool { return all[i].total > all[j].total })
 
-	mvpName, svpName := "-", "-"
+	mvpName, mvpID := "-", ""
 	if len(all) > 0 {
 		mvpName = all[0].name
+		mvpID = all[0].playerID
 	}
 
-	// SVP (most assists) across both teams
-	if len(all) > 0 {
-		maxAssists := -1
-		for _, row := range all {
-			if row.assists > maxAssists {
-				maxAssists = row.assists
-				svpName = row.name
-			}
+	// SVP (most assists) across both teams, excluding MVP, requiring at least 2 assists
+	svpName := ""
+	maxAssists := -1
+	for _, row := range all {
+		if row.playerID == mvpID {
+			continue
+		}
+		if row.assists >= 2 && row.assists > maxAssists {
+			maxAssists = row.assists
+			svpName = row.name
 		}
 	}
 
@@ -80,13 +95,23 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 
 	var msg strings.Builder
 	fmt.Fprintf(&msg, "## MATCH OVER %s · TEAM %d WINS!\n", timeStr, winningTeam)
-	fmt.Fprintf(&msg, "### MVP: %s · SVP: %s\n\n", mvpName, svpName)
+	if svpName != "" {
+		fmt.Fprintf(&msg, "### MVP: %s · SVP: %s\n\n", mvpName, svpName)
+	} else {
+		fmt.Fprintf(&msg, "### MVP: %s\n\n", mvpName)
+	}
 
 	fmt.Fprintf(&msg, "### TEAM 1\n%s\n", buildTeamTable(team1))
 	fmt.Fprintf(&msg, "### TEAM 2\n%s\n", buildTeamTable(team2))
 
-	if len(quitters) > 0 {
-		fmt.Fprintf(&msg, "### Hall of Shame\n%s\n", buildHallOfShameTable(quitters))
+	penalizedQuitters := make([]quitterRecord, 0, len(quitters))
+	for _, q := range quitters {
+		if q.penalty > 0 {
+			penalizedQuitters = append(penalizedQuitters, q)
+		}
+	}
+	if len(penalizedQuitters) > 0 {
+		fmt.Fprintf(&msg, "### Hall of Shame\n*(Players that abandoned their losing teams, either by logging off or switching sides)*\n%s\n", buildHallOfShameTable(penalizedQuitters))
 	}
 
 	if _, err := dc.ChannelMessageSend(t.publicEventsChannel, msg.String()); err != nil {

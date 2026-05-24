@@ -537,7 +537,14 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		t.weightProvider.Refresh(ctx)
 
 		if dc != nil && t.publicEventsChannel != "" {
-			go t.sendPublicMatchEndMessage(dc, winningTeam, totalRounds, persistPlayers, quittersCopy)
+			scoreboardByID := make(map[string]*parse.ScoreboardEntry, len(winEntries)+len(loseEntries))
+			for _, e := range winEntries {
+				scoreboardByID[e.PlayerID] = e
+			}
+			for _, e := range loseEntries {
+				scoreboardByID[e.PlayerID] = e
+			}
+			go t.sendPublicMatchEndMessage(dc, winningTeam, totalRounds, persistPlayers, quittersCopy, scoreboardByID)
 		}
 
 		t.mu.Lock()
@@ -553,19 +560,6 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		if isMatchOver {
 			go t.sendMatchEndEmbed(dc, winningTeam, len(winEntries), len(loseEntries), losses, winBonuses, teamScoresCopy, sizeMult, teamBalanceFactor)
 		}
-	}
-}
-
-func (t *SkirmishTracker) OnPlayerDisconnect(playerID string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.state != skirmishInProgress {
-		return
-	}
-
-	if p, ok := t.players[playerID]; ok && p.QuitAtRound == 0 {
-		p.QuitAtRound = t.currentRound
 	}
 }
 
@@ -631,13 +625,47 @@ func (t *SkirmishTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEven
 					t.gameConfig.Get(CfgMatchLossFactorCap),
 				)
 
-				penalty = loss.ActualLoss
+				sizeMult := matchSizeMult(min(winSize, loseSize))
 
-				if loss.ActualLoss != 0 {
-					if err := data.AddPlayerScore(ctx, e.PlayerID, -loss.ActualLoss); err != nil {
+				allIDs := make([]string, 0, winSize+loseSize)
+				for pid, p := range t.players {
+					if p.Team == winTeamID || p.Team == losingTeamID {
+						allIDs = append(allIDs, pid)
+					}
+				}
+				teamScores, _ := data.ReadPlayerScores(ctx, allIDs)
+				avgTeam := func(teamID int) float64 {
+					sum, n := 0, 0
+					for pid, p := range t.players {
+						if p.Team != teamID {
+							continue
+						}
+						if s := teamScores[pid]; s > 0 {
+							sum += s
+							n++
+						}
+					}
+					if n == 0 {
+						return 0
+					}
+					return float64(sum) / float64(n)
+				}
+				avgWin := avgTeam(winTeamID)
+				avgLose := avgTeam(losingTeamID)
+				teamBalanceFactor := 1.0
+				if avgWin > 0 {
+					minF := t.gameConfig.Get(CfgTeamBalanceMinFactor)
+					maxF := t.gameConfig.Get(CfgTeamBalanceMaxFactor)
+					teamBalanceFactor = math.Min(math.Max(avgLose/avgWin, minF), maxF)
+				}
+
+				penalty = max(min(int(math.Round(float64(loss.ActualLoss)*sizeMult*teamBalanceFactor)), dbPlayer.Score), 0)
+
+				if penalty != 0 {
+					if err := data.AddPlayerScore(ctx, e.PlayerID, -penalty); err != nil {
 						t.logger.Printf("failed to apply match loss to %s: %v", e.PlayerID, err)
 					} else {
-						t.logger.Printf("player logout penalty: %s lost %d points (losing team %d)", e.PlayerID, loss.ActualLoss, losingTeamID)
+						t.logger.Printf("player logout penalty: %s lost %d points (losing team %d, size_mult=%.2f, balance=%.2f)", e.PlayerID, penalty, losingTeamID, sizeMult, teamBalanceFactor)
 					}
 				} else {
 					t.logger.Printf("player logout: %s from losing team %d (no points to lose)", e.PlayerID, losingTeamID)

@@ -54,12 +54,6 @@ func (r *GameRouter) OnKill(e *parse.KillfeedEvent) {
 	}
 }
 
-func (r *GameRouter) OnPlayerDisconnect(playerID string) {
-	if r.active != nil {
-		r.active.OnPlayerDisconnect(playerID)
-	}
-}
-
 func (r *GameRouter) OnPlayerLogout(ctx context.Context, e *parse.LoginEvent) {
 	if r.active != nil {
 		r.active.OnPlayerLogout(ctx, e)

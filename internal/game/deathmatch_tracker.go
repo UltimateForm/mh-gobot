@@ -23,8 +23,6 @@ func NewDeathmatchTracker(wp *ScoreWeightProvider) *DeathmatchTracker {
 
 func (t *DeathmatchTracker) OnMatchState(state string)                               {}
 func (t *DeathmatchTracker) OnKill(e *parse.KillfeedEvent)                           {}
-func (t *DeathmatchTracker) OnPlayerDisconnect(playerID string)                      {}
-
 func (t *DeathmatchTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEvent) {}
 
 func (t *DeathmatchTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
