@@ -171,7 +171,7 @@ func handleScoreCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		if topN, terr := computeTopN(context.Background(), gameConfig); terr == nil && topN > 0 {
 			if cutoff, cerr := data.ReadDecayCutoffScore(context.Background(), topN); cerr == nil {
 				if game.IsDecaying(*player, gameConfig, cutoff, time.Now()) {
-					decayStr = "\n🩸 *Decaying — play a match to refresh*"
+					decayStr = "\n🩸 *Decaying — play a match to preserve*"
 				}
 			}
 		}
