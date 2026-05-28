@@ -205,7 +205,7 @@ func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar ima
 		{lbCols[5], e.Deaths},
 		{lbCols[6], e.Assists},
 	} {
-		dc.DrawStringAnchored(fmt.Sprintf("%d", pair.val), leaderboardPadX+pair.col.x+28, textY, 1, 0.5)
+		dc.DrawStringAnchored(util.HumanFormat(pair.val), leaderboardPadX+pair.col.x+28, textY, 1, 0.5)
 	}
 }
 
@@ -226,9 +226,9 @@ func drawStandardRow(dc *gg.Context, rowY float64, e data.RankedPlayer, rank dat
 		"",  // RANK column - icon drawn separately
 		e.Username,
 		util.HumanFormat(e.Score),
-		fmt.Sprintf("%d", e.Kills),
-		fmt.Sprintf("%d", e.Deaths),
-		fmt.Sprintf("%d", e.Assists),
+		util.HumanFormat(e.Kills),
+		util.HumanFormat(e.Deaths),
+		util.HumanFormat(e.Assists),
 	}
 	playerX := leaderboardPadX + lbCols[2].x
 	var nameW float64
