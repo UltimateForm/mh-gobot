@@ -39,9 +39,9 @@ var lbCols = []lbCol{
 	{"#", 0, true},
 	{"RANK", 114, false},
 	{"PLAYER", 170, false},
-	{"SCORE", 640, true},
-	{"K", 720, true},
-	{"D", 770, true},
+	{"SCORE", 610, true},
+	{"K", 695, true},
+	{"D", 760, true},
 	{"A", 820, true},
 }
 
@@ -174,7 +174,7 @@ func drawPodiumRow(dc *gg.Context, rowY float64, e data.RankedPlayer, avatar ima
 
 	dc.SetFontFace(nameFace)
 	dc.SetHexColor("#FFFFFF")
-	name := truncateToWidth(dc, e.Username, 400)
+	name := truncateToWidth(dc, e.Username, 340)
 	dc.DrawStringAnchored(name, nameX, textY-8, 0, 0.5)
 
 	if hasRank && showRankNames {

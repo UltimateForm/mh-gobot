@@ -65,6 +65,13 @@ func main() {
 		}
 	}
 
+	// Test harness: give top 3 high K/D/A to preview human-readable formatting.
+	for i := 0; i < 3 && i < len(players); i++ {
+		players[i].Kills = 1200 + i*300
+		players[i].Deaths = 1050 + i*200
+		players[i].Assists = 1100 + i*150
+	}
+
 	// Render leaderboard
 	imgReader, err := img.RenderLeaderboardImage(players, avatars, tierMap, rankIconCache, decayingIDs)
 	if err != nil {
