@@ -14,13 +14,14 @@ import (
 )
 
 type playerTableRow struct {
-	playerID string
-	name     string
-	kills    int
-	deaths   int
-	assists  int
-	partPct  int
-	total    int
+	playerID     string
+	name         string
+	kills        int
+	deaths       int
+	assists      int
+	partPct      int
+	total        int
+	initialScore int
 }
 
 func (t *SkirmishTracker) sendPublicMatchEndMessage(
@@ -50,13 +51,14 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 			assists = sb.Assists
 		}
 		row := playerTableRow{
-			playerID: id,
-			name:     p.Name,
-			kills:    kills,
-			deaths:   deaths,
-			assists:  assists,
-			partPct:  int(math.Round(100.0 * p.GetParticipationRatio(totalRounds))),
-			total:    p.GetTotalScore(),
+			playerID:     id,
+			name:         p.Name,
+			kills:        kills,
+			deaths:       deaths,
+			assists:      assists,
+			partPct:      int(math.Round(100.0 * p.GetParticipationRatio(totalRounds))),
+			total:        p.GetTotalScore(),
+			initialScore: p.InitialScore,
 		}
 		if p.Team == 1 {
 			team1 = append(team1, row)
@@ -121,14 +123,14 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 
 func buildTeamTable(rows []playerTableRow) string {
 	tw := table.NewWriter()
-	tw.AppendHeader(table.Row{"Name", "K", "D", "A", "Part", "Total"})
+	tw.AppendHeader(table.Row{"Name", "K", "D", "A", "Part", "Pts", "Total"})
 	for _, row := range rows {
 		name := row.name
 		if len(name) > 16 {
 			name = name[:16]
 		}
 		partPctStr := fmt.Sprintf("%d%%", row.partPct)
-		tw.AppendRow(table.Row{name, row.kills, row.deaths, row.assists, partPctStr, fmt.Sprintf("%+d", row.total)})
+		tw.AppendRow(table.Row{name, row.kills, row.deaths, row.assists, partPctStr, row.initialScore, fmt.Sprintf("%+d", row.total)})
 	}
 	tw.SetStyle(table.StyleLight)
 	tw.Style().Options.DrawBorder = false

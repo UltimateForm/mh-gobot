@@ -196,9 +196,20 @@ func (t *SkirmishTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 	perf := p.Rounds[t.currentRound]
 	perf.Score += int(e.ScoreChange)
 	p.Rounds[t.currentRound] = perf
+	needsStamp := !p.initialScoreStamped
 
 	go func() {
-		if err := data.AddPlayerScore(context.Background(), e.PlayerID, int(e.ScoreChange)); err != nil {
+		ctx := context.Background()
+		if needsStamp {
+			if dbPlayer, err := data.ReadPlayer(ctx, e.PlayerID); err == nil {
+				t.mu.Lock()
+				if pp, ok := t.players[e.PlayerID]; ok {
+					pp.StampInitialScore(dbPlayer.Score)
+				}
+				t.mu.Unlock()
+			}
+		}
+		if err := data.AddPlayerScore(ctx, e.PlayerID, int(e.ScoreChange)); err != nil {
 			t.logger.Printf("failed to add score for %s: %v", e.PlayerID, err)
 		}
 	}()
@@ -325,6 +336,14 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		t.logger.Printf("failed to read player scores: %v", err)
 		playerScores = make(map[string]int)
 	}
+
+	t.mu.Lock()
+	for id, p := range t.players {
+		if s, ok := playerScores[id]; ok {
+			p.StampInitialScore(s)
+		}
+	}
+	t.mu.Unlock()
 
 	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
 

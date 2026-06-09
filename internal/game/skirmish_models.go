@@ -14,9 +14,11 @@ type SkirmishPlayer struct {
 	PlayerId         string
 	Name             string
 	Team             int
-	QuitAtRound      int
-	MatchResultScore int
-	TeamSwitched     bool
+	QuitAtRound          int
+	MatchResultScore     int
+	InitialScore         int
+	initialScoreStamped  bool
+	TeamSwitched         bool
 }
 
 func (p *SkirmishPlayer) AddRound(round int, perf SkirmishPlayerPerformance) {
@@ -53,6 +55,13 @@ func (p *SkirmishPlayer) GetTotalAssists() int {
 		total += perf.Assists
 	}
 	return total
+}
+
+func (p *SkirmishPlayer) StampInitialScore(score int) {
+	if !p.initialScoreStamped {
+		p.InitialScore = score
+		p.initialScoreStamped = true
+	}
 }
 
 func (p *SkirmishPlayer) GetParticipationRatio(totalRounds int) float64 {
