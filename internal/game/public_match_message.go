@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/UltimateForm/mh-gobot/internal/parse"
+	"github.com/UltimateForm/mh-gobot/internal/util"
 	"github.com/bwmarrin/discordgo"
 	"github.com/jedib0t/go-pretty/v6/table"
 )
@@ -130,7 +131,7 @@ func buildTeamTable(rows []playerTableRow) string {
 			name = name[:16]
 		}
 		partPctStr := fmt.Sprintf("%d%%", row.partPct)
-		tw.AppendRow(table.Row{name, row.kills, row.deaths, row.assists, partPctStr, row.initialScore, fmt.Sprintf("%+d", row.total)})
+		tw.AppendRow(table.Row{name, row.kills, row.deaths, row.assists, partPctStr, util.HumanFormat(row.initialScore), fmt.Sprintf("%+d", row.total)})
 	}
 	tw.SetStyle(table.StyleLight)
 	tw.Style().Options.DrawBorder = false
