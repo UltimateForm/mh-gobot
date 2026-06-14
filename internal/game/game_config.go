@@ -26,6 +26,7 @@ const (
 	CfgDecayTopPct           = "decay_top_pct"
 	CfgTeamBalanceMinFactor  = "team_balance_min_factor"
 	CfgTeamBalanceMaxFactor  = "team_balance_max_factor"
+	CfgFirstKillBonusFactor  = "first_kill_bonus_factor"
 )
 
 var gameConfigDefaults = map[string]float64{
@@ -43,6 +44,7 @@ var gameConfigDefaults = map[string]float64{
 	CfgDecayTopPct:           0.40,
 	CfgTeamBalanceMinFactor:  0.30,
 	CfgTeamBalanceMaxFactor:  1.00,
+	CfgFirstKillBonusFactor:  1.50,
 }
 
 var GameConfigDescriptions = map[string]string{
@@ -60,6 +62,7 @@ var GameConfigDescriptions = map[string]string{
 	CfgDecayTopPct:           "Top fraction of players (by score, score > 0) eligible for decay (0.40 = top 40%). Players falling below this cutoff naturally stop decaying.",
 	CfgTeamBalanceMinFactor:  "Floor for the team-balance loss reduction factor (0.30 = losses never reduced below 30% of normal). Prevents total zeroing of losses even in extreme skill mismatches.",
 	CfgTeamBalanceMaxFactor:  "Ceiling for the team-balance loss reduction factor (1.00 = no cap). Reduce below 1.0 to apply a universal discount even when teams are evenly matched.",
+	CfgFirstKillBonusFactor:  "Multiplier for the first kill bonus in each round (1.50 = 50% extra on top of the base 100 points). The bonus is (factor - 1) * 100, so the game's 100 points + bonus.",
 }
 
 func GameConfigDefaults() map[string]float64 {

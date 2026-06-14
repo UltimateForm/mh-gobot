@@ -67,10 +67,11 @@ type quitterRecord struct {
 }
 
 type SkirmishTracker struct {
-	mu                  sync.Mutex
-	state               skirmishState
-	currentRound        int
-	players             map[string]*SkirmishPlayer
+	mu                        sync.Mutex
+	state                     skirmishState
+	currentRound              int
+	players                   map[string]*SkirmishPlayer
+	firstKillOfMatchApplied   bool
 	teamScores          map[int]float64
 	matchRounds         []SkirmishMatchRound
 	matchStartedAt      time.Time
@@ -111,6 +112,7 @@ func (t *SkirmishTracker) clearMatch() {
 	t.matchStartedAt = time.Time{}
 	t.matchMap = ""
 	t.quitters = make([]quitterRecord, 0)
+	t.firstKillOfMatchApplied = false
 }
 
 func (t *SkirmishTracker) TeamScores() map[int]int {
@@ -230,9 +232,22 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 		p.Rounds[t.currentRound] = perf
 		return
 	}
+	isFirstKillOfMatch := !t.firstKillOfMatchApplied
 	perf.Kills++
 	perf.KilledIds = append(perf.KilledIds, e.KilledID)
 	p.Rounds[t.currentRound] = perf
+
+	if isFirstKillOfMatch {
+		t.firstKillOfMatchApplied = true
+		go func() {
+			bonus := int((t.gameConfig.Get(CfgFirstKillBonusFactor) - 1) * 100)
+			if bonus > 0 {
+				if err := data.AddPlayerScore(context.Background(), e.KillerID, bonus); err != nil {
+					t.logger.Printf("first kill bonus failed for %s: %v", e.KillerID, err)
+				}
+			}
+		}()
+	}
 
 	p = t.getOrInitPlayer(e.KilledID, e.KilledUserName)
 	perf = p.Rounds[t.currentRound]
@@ -678,13 +693,15 @@ func (t *SkirmishTracker) OnPlayerLogout(ctx context.Context, e *parse.LoginEven
 					teamBalanceFactor = math.Min(math.Max(avgLose/avgWin, minF), maxF)
 				}
 
-				penalty = max(min(int(math.Round(float64(loss.ActualLoss)*sizeMult*teamBalanceFactor)), dbPlayer.Score), 0)
+				matchProgressFactor := math.Min(float64(t.currentRound)/t.winCap, 1.0)
+
+				penalty = max(min(int(math.Round(float64(loss.ActualLoss)*sizeMult*teamBalanceFactor*matchProgressFactor)), dbPlayer.Score), 0)
 
 				if penalty != 0 {
 					if err := data.AddPlayerScore(ctx, e.PlayerID, -penalty); err != nil {
 						t.logger.Printf("failed to apply match loss to %s: %v", e.PlayerID, err)
 					} else {
-						t.logger.Printf("player logout penalty: %s lost %d points (losing team %d, size_mult=%.2f, balance=%.2f)", e.PlayerID, penalty, losingTeamID, sizeMult, teamBalanceFactor)
+						t.logger.Printf("player logout penalty: %s lost %d points (losing team %d, size_mult=%.2f, balance=%.2f, progress=%.2f)", e.PlayerID, penalty, losingTeamID, sizeMult, teamBalanceFactor, matchProgressFactor)
 					}
 				} else {
 					t.logger.Printf("player logout: %s from losing team %d (no points to lose)", e.PlayerID, losingTeamID)
