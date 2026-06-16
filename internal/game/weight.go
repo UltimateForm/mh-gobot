@@ -11,9 +11,22 @@ import (
 
 const scoreWeightFloor = 500.0
 
+const (
+	killFactorFloor   = 0.2
+	killFactorCeiling = 20.0
+)
+
 func ScoreWeight(currentScore int, avgScore float64) float64 {
 	k := math.Max(avgScore, scoreWeightFloor)
 	return k / (k + float64(currentScore))
+}
+
+// KillFactor rewards/penalizes a kill based on how the victim's score compares to the
+// killer's, smoothed by k (the same avg-score floor used in ScoreWeight) so the ratio
+// doesn't swing wildly for players with near-zero scores.
+func KillFactor(victimScore, killerScore int, k float64) float64 {
+	ratio := (float64(victimScore) + k) / (float64(killerScore) + k)
+	return math.Min(math.Max(ratio, killFactorFloor), killFactorCeiling)
 }
 
 type ScoreWeightProvider struct {

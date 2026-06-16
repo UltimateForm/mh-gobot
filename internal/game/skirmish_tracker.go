@@ -22,8 +22,6 @@ const (
 	skirmishInProgress
 )
 
-const killFactorFloor = 0.05
-
 var matchSizeMultipliers = map[int]float64{
 	1: 0.00,
 	2: 0.10,
@@ -47,8 +45,6 @@ type roundResult struct {
 	username     string
 	delta        float64
 	bonus        int
-	weight       float64
-	killFactor   float64
 	comebackMult float64
 }
 
@@ -193,6 +189,32 @@ func (t *SkirmishTracker) captureMatchMap() {
 	t.mu.Unlock()
 }
 
+// stampIfNeeded seeds a player's InitialScore/LiveScore from the DB once, asynchronously,
+// the first time they're seen in a match. No-op if already stamped.
+func (t *SkirmishTracker) stampIfNeeded(playerID string, alreadyStamped bool) {
+	if alreadyStamped {
+		return
+	}
+	go func() {
+		ctx := context.Background()
+		if dbPlayer, err := data.ReadPlayer(ctx, playerID); err == nil {
+			t.mu.Lock()
+			if pp, ok := t.players[playerID]; ok {
+				pp.StampInitialScore(dbPlayer.Score)
+			}
+			t.mu.Unlock()
+		}
+	}()
+}
+
+func (t *SkirmishTracker) applyScoreDelta(playerID string, delta int, label string) {
+	go func() {
+		if err := data.AddPlayerScore(context.Background(), playerID, delta); err != nil {
+			t.logger.Printf("%s failed for %s: %v", label, playerID, err)
+		}
+	}()
+}
+
 func (t *SkirmishTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -202,26 +224,19 @@ func (t *SkirmishTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 	}
 
 	p := t.getOrInitPlayer(e.PlayerID, e.UserName)
-	perf := p.Rounds[t.currentRound]
-	perf.Score += int(e.ScoreChange)
-	p.Rounds[t.currentRound] = perf
-	needsStamp := !p.initialScoreStamped
+	delta := int(e.ScoreChange)
+	if delta > 0 {
+		weight := ScoreWeight(p.LiveScore, t.weightProvider.AvgScore())
+		delta = int(math.Round(float64(e.ScoreChange) * weight))
+	}
 
-	go func() {
-		ctx := context.Background()
-		if needsStamp {
-			if dbPlayer, err := data.ReadPlayer(ctx, e.PlayerID); err == nil {
-				t.mu.Lock()
-				if pp, ok := t.players[e.PlayerID]; ok {
-					pp.StampInitialScore(dbPlayer.Score)
-				}
-				t.mu.Unlock()
-			}
-		}
-		if err := data.AddPlayerScore(ctx, e.PlayerID, int(e.ScoreChange)); err != nil {
-			t.logger.Printf("failed to add score for %s: %v", e.PlayerID, err)
-		}
-	}()
+	perf := p.Rounds[t.currentRound]
+	perf.Score += delta
+	p.Rounds[t.currentRound] = perf
+	p.LiveScore += delta
+
+	t.stampIfNeeded(e.PlayerID, p.initialScoreStamped)
+	t.applyScoreDelta(e.PlayerID, delta, "score update")
 }
 
 func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
@@ -232,36 +247,52 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 		return
 	}
 
-	p := t.getOrInitPlayer(e.KillerID, e.UserName)
-	perf := p.Rounds[t.currentRound]
+	killer := t.getOrInitPlayer(e.KillerID, e.UserName)
+	victim := t.getOrInitPlayer(e.KilledID, e.KilledUserName)
+	t.stampIfNeeded(e.KillerID, killer.initialScoreStamped)
+	t.stampIfNeeded(e.KilledID, victim.initialScoreStamped)
+
+	baseline := 100.0
+	if e.IsAssist {
+		baseline = 50.0
+	}
+	
+	avgScore := t.weightProvider.AvgScore()
+	kf := KillFactor(victim.LiveScore, killer.LiveScore, math.Max(avgScore, scoreWeightFloor))
+	weight := ScoreWeight(killer.LiveScore, avgScore)
+	topUp := int(math.Round(baseline * weight * (kf - 1)))
+
+	perf := killer.Rounds[t.currentRound]
 	if e.IsAssist {
 		perf.Assists++
-		p.Rounds[t.currentRound] = perf
+	} else {
+		perf.Kills++
+		perf.KilledIds = append(perf.KilledIds, e.KilledID)
+	}
+	perf.Score += topUp
+	killer.Rounds[t.currentRound] = perf
+	killer.LiveScore += topUp
+	if topUp != 0 {
+		t.applyScoreDelta(e.KillerID, topUp, "kill factor adjustment")
+	}
+
+	if e.IsAssist {
 		return
 	}
-	isFirstKillOfMatch := !t.firstKillOfMatchApplied
-	perf.Kills++
-	perf.KilledIds = append(perf.KilledIds, e.KilledID)
-	p.Rounds[t.currentRound] = perf
 
-	if isFirstKillOfMatch {
+	if !t.firstKillOfMatchApplied {
 		t.firstKillOfMatchApplied = true
-		go func() {
-			bonus := int((t.gameConfig.Get(CfgFirstKillBonusFactor) - 1) * 100)
-			if bonus > 0 {
-				if err := data.AddPlayerScore(context.Background(), e.KillerID, bonus); err != nil {
-					t.logger.Printf("first kill bonus failed for %s: %v", e.KillerID, err)
-				}
-			}
-		}()
+		bonus := int((t.gameConfig.Get(CfgFirstKillBonusFactor) - 1) * 100)
+		if bonus > 0 {
+			t.applyScoreDelta(e.KillerID, bonus, "first kill bonus")
+		}
 	}
 
-	p = t.getOrInitPlayer(e.KilledID, e.KilledUserName)
-	perf = p.Rounds[t.currentRound]
-	perf.Deaths++
-	p.Rounds[t.currentRound] = perf
+	victimPerf := victim.Rounds[t.currentRound]
+	victimPerf.Deaths++
+	victim.Rounds[t.currentRound] = victimPerf
 
-	victimTeam := p.Team
+	victimTeam := victim.Team
 	if victimTeam > 0 {
 		t.roundAliveCounts[victimTeam]--
 		for teamID := 1; teamID <= 2; teamID++ {
@@ -358,24 +389,13 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 
 	t.teamScores[e.TeamID] = e.NewScore
 
-	// Batch read player scores for weighted bonus calc
+	// Batch read player scores for loss calc and end-of-round stamp sync
 	allIDs := make([]string, 0, len(entries))
 	idSeen := make(map[string]bool)
 	for _, entry := range entries {
 		if !idSeen[entry.PlayerID] {
 			allIDs = append(allIDs, entry.PlayerID)
 			idSeen[entry.PlayerID] = true
-		}
-	}
-
-	// Add victim IDs from winners for rank-differential kill factor calculation
-	for _, entry := range winEntries {
-		p := t.players[entry.PlayerID]
-		for _, vid := range p.Rounds[t.currentRound].KilledIds {
-			if !idSeen[vid] {
-				allIDs = append(allIDs, vid)
-				idSeen[vid] = true
-			}
 		}
 	}
 
@@ -397,7 +417,8 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 
 	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
 
-	// Win bonuses
+	// Win bonuses — weight and kf are now applied live in OnPlayerScore/OnKill,
+	// so rd already reflects fairness-adjusted round contribution.
 	peakDeficit := t.roundPeakDeficit[winningTeam]
 	comebackMult := 1.0
 	if peakDeficit > 0 {
@@ -412,30 +433,12 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		isSurvivor := p.Rounds[t.currentRound].Deaths == 0
 		t.mu.Unlock()
 
-		// Kill factor from rank-differential of eliminations
-		kf := 1.0
-		victims := p.Rounds[t.currentRound].KilledIds
-		if len(victims) > 0 {
-			killerScore := float64(playerScores[entry.PlayerID])
-			if killerScore == 0 {
-				killerScore = 1
-			}
-			sum := 0.0
-			for _, vid := range victims {
-				sum += float64(playerScores[vid]) / killerScore
-			}
-			kf = math.Min(math.Max(sum/float64(len(victims)), 0.2), 20.0)
-		}
-
 		winMod := t.gameConfig.Get(CfgSkirmishRoundWinMod)
 		cm := 1.0
 		if isSurvivor && peakDeficit > 0 {
 			cm = comebackMult
 		}
-		bonus := rd * winMod * cm * kf
-
-		w := t.weightProvider.Weight(playerScores[entry.PlayerID])
-		b := int(math.Round(bonus * w))
+		b := int(math.Round(rd * winMod * cm))
 
 		if b > 0 {
 			matchesWon := 0
@@ -445,7 +448,7 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 			if err := data.UpsertSkirmishWin(ctx, entry.PlayerID, b, 1, matchesWon); err != nil {
 				t.logger.Printf("upsert win failed for %s: %v", entry.PlayerID, err)
 			}
-			winResults = append(winResults, roundResult{entry.PlayerID, entry.UserName, rd, b, w, kf, cm})
+			winResults = append(winResults, roundResult{entry.PlayerID, entry.UserName, rd, b, cm})
 		}
 	}
 
@@ -789,7 +792,7 @@ func formatResultsTable(results []roundResult) string {
 		if len(name) > 16 {
 			name = name[:16]
 		}
-		line := fmt.Sprintf("%-16s Δ%+.0f w=%.2f kf=%.2f", name, r.delta, r.weight, r.killFactor)
+		line := fmt.Sprintf("%-16s Δ%+.0f", name, r.delta)
 		if r.comebackMult > 1.0 {
 			line += fmt.Sprintf(" cm=%.2f", r.comebackMult)
 		}

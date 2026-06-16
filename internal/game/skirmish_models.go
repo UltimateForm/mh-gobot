@@ -17,6 +17,7 @@ type SkirmishPlayer struct {
 	QuitAtRound          int
 	MatchResultScore     int
 	InitialScore         int
+	LiveScore            int
 	initialScoreStamped  bool
 	TeamSwitched         bool
 }
@@ -60,6 +61,7 @@ func (p *SkirmishPlayer) GetTotalAssists() int {
 func (p *SkirmishPlayer) StampInitialScore(score int) {
 	if !p.initialScoreStamped {
 		p.InitialScore = score
+		p.LiveScore = score
 		p.initialScoreStamped = true
 	}
 }
