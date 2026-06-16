@@ -43,12 +43,13 @@ func matchSizeMult(teamSize int) float64 {
 }
 
 type roundResult struct {
-	playerID   string
-	username   string
-	delta      float64
-	bonus      int
-	weight     float64
-	killFactor float64
+	playerID     string
+	username     string
+	delta        float64
+	bonus        int
+	weight       float64
+	killFactor   float64
+	comebackMult float64
 }
 
 type matchWinResult struct {
@@ -73,6 +74,8 @@ type SkirmishTracker struct {
 	players                   map[string]*SkirmishPlayer
 	firstKillOfMatchApplied   bool
 	teamScores          map[int]float64
+	roundAliveCounts    map[int]int
+	roundPeakDeficit    map[int]int
 	matchRounds         []SkirmishMatchRound
 	matchStartedAt      time.Time
 	matchMap            string
@@ -92,6 +95,8 @@ func NewSkirmishTracker(pool *rcon_client.ConnectionPool, eventsChannel string, 
 		currentRound:        0,
 		players:             make(map[string]*SkirmishPlayer),
 		teamScores:          make(map[int]float64),
+		roundAliveCounts:    make(map[int]int),
+		roundPeakDeficit:    make(map[int]int),
 		matchRounds:         make([]SkirmishMatchRound, 0),
 		winCap:              winCap,
 		pool:                pool,
@@ -108,6 +113,8 @@ func (t *SkirmishTracker) clearMatch() {
 	t.currentRound = 0
 	t.players = make(map[string]*SkirmishPlayer)
 	t.teamScores = make(map[int]float64)
+	t.roundAliveCounts = make(map[int]int)
+	t.roundPeakDeficit = make(map[int]int)
 	t.matchRounds = make([]SkirmishMatchRound, 0)
 	t.matchStartedAt = time.Time{}
 	t.matchMap = ""
@@ -253,6 +260,17 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 	perf = p.Rounds[t.currentRound]
 	perf.Deaths++
 	p.Rounds[t.currentRound] = perf
+
+	victimTeam := p.Team
+	if victimTeam > 0 {
+		t.roundAliveCounts[victimTeam]--
+		for teamID := 1; teamID <= 2; teamID++ {
+			deficit := t.roundAliveCounts[3-teamID] - t.roundAliveCounts[teamID]
+			if deficit > t.roundPeakDeficit[teamID] {
+				t.roundPeakDeficit[teamID] = deficit
+			}
+		}
+	}
 }
 
 func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session, e *parse.ScorefeedTeamEvent) {
@@ -291,8 +309,25 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		return
 	}
 
-	var winEntries, loseEntries []*parse.ScoreboardEntry
+	validEntries := make([]*parse.ScoreboardEntry, 0, len(entries))
 	for _, entry := range entries {
+		if entry.TeamID > 0 {
+			validEntries = append(validEntries, entry)
+		} else {
+			// Check for players in spectator mode (TeamID==0 but still tracked)
+			t.mu.Lock()
+			if p, tracked := t.players[entry.PlayerID]; tracked && p.Team != 0 {
+				t.mu.Unlock()
+				t.logger.Printf("player %s entered spectator mode (was team %d)", entry.PlayerID, p.Team)
+				t.OnPlayerLogout(ctx, &parse.LoginEvent{PlayerID: entry.PlayerID})
+			} else {
+				t.mu.Unlock()
+			}
+		}
+	}
+
+	var winEntries, loseEntries []*parse.ScoreboardEntry
+	for _, entry := range validEntries {
 		if entry.TeamID == winningTeam {
 			winEntries = append(winEntries, entry)
 		} else {
@@ -304,7 +339,7 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	t.mu.Lock()
 
 	// Update team assignments and ensure round entries for all present players
-	for _, entry := range entries {
+	for _, entry := range validEntries {
 		p := t.getOrInitPlayer(entry.PlayerID, entry.UserName)
 		// Team change detection: reset rounds if team changed
 		if p.Team != 0 && p.Team != entry.TeamID {
@@ -363,11 +398,18 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
 
 	// Win bonuses
+	peakDeficit := t.roundPeakDeficit[winningTeam]
+	comebackMult := 1.0
+	if peakDeficit > 0 {
+		comebackMult = float64(peakDeficit) * t.gameConfig.Get(CfgComebackBonusFactor)
+	}
+
 	winResults := make([]roundResult, 0, len(winEntries))
 	for _, entry := range winEntries {
 		t.mu.Lock()
 		p := t.players[entry.PlayerID]
 		rd := float64(p.Rounds[t.currentRound].Score)
+		isSurvivor := p.Rounds[t.currentRound].Deaths == 0
 		t.mu.Unlock()
 
 		// Kill factor from rank-differential of eliminations
@@ -386,7 +428,11 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		}
 
 		winMod := t.gameConfig.Get(CfgSkirmishRoundWinMod)
-		bonus := rd * winMod * (float64(len(loseEntries)) / float64(len(winEntries))) * kf
+		cm := 1.0
+		if isSurvivor && peakDeficit > 0 {
+			cm = comebackMult
+		}
+		bonus := rd * winMod * cm * kf
 
 		w := t.weightProvider.Weight(playerScores[entry.PlayerID])
 		b := int(math.Round(bonus * w))
@@ -399,12 +445,19 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 			if err := data.UpsertSkirmishWin(ctx, entry.PlayerID, b, 1, matchesWon); err != nil {
 				t.logger.Printf("upsert win failed for %s: %v", entry.PlayerID, err)
 			}
-			winResults = append(winResults, roundResult{entry.PlayerID, entry.UserName, rd, b, w, kf})
+			winResults = append(winResults, roundResult{entry.PlayerID, entry.UserName, rd, b, w, kf, cm})
 		}
 	}
 
 	t.mu.Lock()
 	t.currentRound++
+	t.roundAliveCounts = make(map[int]int)
+	t.roundPeakDeficit = make(map[int]int)
+	for _, p := range t.players {
+		if p.Team > 0 {
+			t.roundAliveCounts[p.Team]++
+		}
+	}
 	t.mu.Unlock()
 
 	// Loss calculation and match-end logic
@@ -736,7 +789,12 @@ func formatResultsTable(results []roundResult) string {
 		if len(name) > 16 {
 			name = name[:16]
 		}
-		fmt.Fprintf(&sb, "%-16s Δ%+.0f w=%.2f kf=%.2f → +%d\n", name, r.delta, r.weight, r.killFactor, r.bonus)
+		line := fmt.Sprintf("%-16s Δ%+.0f w=%.2f kf=%.2f", name, r.delta, r.weight, r.killFactor)
+		if r.comebackMult > 1.0 {
+			line += fmt.Sprintf(" cm=%.2f", r.comebackMult)
+		}
+		line += fmt.Sprintf(" → +%d\n", r.bonus)
+		sb.WriteString(line)
 	}
 	sb.WriteString("```")
 	return sb.String()
@@ -788,7 +846,8 @@ func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, wi
 	}
 
 	title := fmt.Sprintf("⚔️ Round %d - Team %d wins", roundNum, winningTeam)
-	description := fmt.Sprintf("**Round Win Mod:** %.2f | **Team Balance Mod:** %.2f", winMod, winSizeFactor)
+	peakDeficit := t.roundPeakDeficit[winningTeam]
+	description := fmt.Sprintf("**Round Win Mod:** %.2f | **Team Balance Mod:** %.2f | **Peak Deficit:** %d", winMod, winSizeFactor, peakDeficit)
 
 	fields := []*discordgo.MessageEmbedField{
 		{

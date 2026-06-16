@@ -27,6 +27,7 @@ const (
 	CfgTeamBalanceMinFactor  = "team_balance_min_factor"
 	CfgTeamBalanceMaxFactor  = "team_balance_max_factor"
 	CfgFirstKillBonusFactor  = "first_kill_bonus_factor"
+	CfgComebackBonusFactor   = "comeback_bonus_factor"
 )
 
 var gameConfigDefaults = map[string]float64{
@@ -45,6 +46,7 @@ var gameConfigDefaults = map[string]float64{
 	CfgTeamBalanceMinFactor:  0.30,
 	CfgTeamBalanceMaxFactor:  1.00,
 	CfgFirstKillBonusFactor:  1.50,
+	CfgComebackBonusFactor:   1.50,
 }
 
 var GameConfigDescriptions = map[string]string{
@@ -63,6 +65,7 @@ var GameConfigDescriptions = map[string]string{
 	CfgTeamBalanceMinFactor:  "Floor for the team-balance loss reduction factor (0.30 = losses never reduced below 30% of normal). Prevents total zeroing of losses even in extreme skill mismatches.",
 	CfgTeamBalanceMaxFactor:  "Ceiling for the team-balance loss reduction factor (1.00 = no cap). Reduce below 1.0 to apply a universal discount even when teams are evenly matched.",
 	CfgFirstKillBonusFactor:  "Multiplier for the first kill bonus in each round (1.50 = 50% extra on top of the base 100 points). The bonus is (factor - 1) * 100, so the game's 100 points + bonus.",
+	CfgComebackBonusFactor:   "Multiplier applied when a team overcomes a peak deficit (1.0 = no bonus, 1.5 = 50% bonus). Only applied to survivors (players with 0 deaths in the round).",
 }
 
 func GameConfigDefaults() map[string]float64 {

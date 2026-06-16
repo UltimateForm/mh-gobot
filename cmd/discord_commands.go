@@ -635,6 +635,7 @@ var configKeys = []string{
 	game.CfgTeamBalanceMinFactor,
 	game.CfgTeamBalanceMaxFactor,
 	game.CfgFirstKillBonusFactor,
+	game.CfgComebackBonusFactor,
 }
 
 func handleTunersGetCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -1322,6 +1323,7 @@ var commandRegistry = discord.NewCommandRegistry([]discord.Command{
 						{Name: game.CfgTeamBalanceMinFactor, Value: game.CfgTeamBalanceMinFactor},
 						{Name: game.CfgTeamBalanceMaxFactor, Value: game.CfgTeamBalanceMaxFactor},
 						{Name: game.CfgFirstKillBonusFactor, Value: game.CfgFirstKillBonusFactor},
+						{Name: game.CfgComebackBonusFactor, Value: game.CfgComebackBonusFactor},
 					},
 				},
 				{
