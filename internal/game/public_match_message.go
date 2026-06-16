@@ -104,8 +104,10 @@ func (t *SkirmishTracker) sendPublicMatchEndMessage(
 		fmt.Fprintf(&msg, "### MVP: %s\n\n", mvpName)
 	}
 
-	fmt.Fprintf(&msg, "### TEAM 1\n%s\n", buildTeamTable(team1))
-	fmt.Fprintf(&msg, "### TEAM 2\n%s\n", buildTeamTable(team2))
+	t1avg, t1total := teamScoreStats(team1)
+	t2avg, t2total := teamScoreStats(team2)
+	fmt.Fprintf(&msg, "### TEAM 1\n%s\navg %s · total %s\n", buildTeamTable(team1), util.HumanFormat(t1avg), util.HumanFormat(t1total))
+	fmt.Fprintf(&msg, "### TEAM 2\n%s\navg %s · total %s\n", buildTeamTable(team2), util.HumanFormat(t2avg), util.HumanFormat(t2total))
 
 	penalizedQuitters := make([]quitterRecord, 0, len(quitters))
 	for _, q := range quitters {
@@ -137,6 +139,16 @@ func buildTeamTable(rows []playerTableRow) string {
 	tw.Style().Options.DrawBorder = false
 	tw.Style().Options.SeparateRows = false
 	return fmt.Sprintf("```\n%s\n```", tw.Render())
+}
+
+func teamScoreStats(rows []playerTableRow) (avg int, total int) {
+	for _, r := range rows {
+		total += r.initialScore
+	}
+	if len(rows) > 0 {
+		avg = total / len(rows)
+	}
+	return
 }
 
 func buildHallOfShameTable(quitters []quitterRecord) string {
