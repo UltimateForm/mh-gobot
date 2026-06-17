@@ -646,7 +646,7 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	t.logger.Printf("round %d: %d win bonuses, %d losses (K=%.0f)", roundNum, len(winResults), len(losses), avgK)
 
 	if dc != nil && t.eventsChannel != "" {
-		go t.sendRoundEmbed(dc, roundNum, winningTeam, len(winEntries), len(loseEntries), winResults)
+		go t.sendRoundEmbed(dc, roundNum, winningTeam, len(winEntries), len(loseEntries), winResults, peakDeficit)
 		if isMatchOver {
 			go t.sendMatchEndEmbed(dc, winningTeam, len(winEntries), len(loseEntries), losses, winBonuses, teamScoresCopy, sizeMult, teamBalanceFactor)
 		}
@@ -838,7 +838,7 @@ func formatMatchWinTable(results []matchWinResult) string {
 	return sb.String()
 }
 
-func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, winningTeam int, winSize int, loseSize int, winResults []roundResult) {
+func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, winningTeam int, winSize int, loseSize int, winResults []roundResult, peakDeficit int) {
 	color := 0x57F287
 	winMod := t.gameConfig.Get(CfgSkirmishRoundWinMod)
 	maxSizeFactor := t.gameConfig.Get(CfgSkirmishSizeFactorCap)
@@ -849,7 +849,6 @@ func (t *SkirmishTracker) sendRoundEmbed(dc *discordgo.Session, roundNum int, wi
 	}
 
 	title := fmt.Sprintf("⚔️ Round %d - Team %d wins", roundNum, winningTeam)
-	peakDeficit := t.roundPeakDeficit[winningTeam]
 	description := fmt.Sprintf("**Round Win Mod:** %.2f | **Team Balance Mod:** %.2f | **Peak Deficit:** %d", winMod, winSizeFactor, peakDeficit)
 
 	fields := []*discordgo.MessageEmbedField{
