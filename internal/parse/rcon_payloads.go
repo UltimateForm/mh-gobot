@@ -214,3 +214,36 @@ func ParseMatchstate(raw string) (string, error) {
 	}
 	return values["state"], nil
 }
+
+// ParseCustomDmg parses a [DMG] custom RCON event emitted at round end.
+// Format: "Custom: [DMG] ID1 | 1020.0\nID2 | 352.0\n"
+// Values are cumulative match damage (not reset per round).
+// Returns nil if the body is not a [DMG] event or contains no valid entries.
+func ParseCustomDmg(body string) map[string]float64 {
+	const prefix = "Custom: [DMG] "
+	if !strings.HasPrefix(body, prefix) {
+		return nil
+	}
+	content := strings.ReplaceAll(body[len(prefix):], `\n`, "\n")
+	result := make(map[string]float64)
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " | ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		id := strings.TrimSpace(parts[0])
+		dmg, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+		if err != nil || id == "" {
+			continue
+		}
+		result[id] = dmg
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}

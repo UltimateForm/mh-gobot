@@ -60,6 +60,12 @@ func (r *GameRouter) OnPlayerLogout(ctx context.Context, e *parse.LoginEvent) {
 	}
 }
 
+func (r *GameRouter) OnCustomDmg(ctx context.Context, dc *discordgo.Session, dmg map[string]float64) {
+	if r.active != nil {
+		r.active.OnCustomDmg(ctx, dc, dmg)
+	}
+}
+
 func (r *GameRouter) resolveTracker() GameTrackerCompute {
 	var infoRaw string
 	err := r.pool.WithClient(context.Background(), func(client *rcon_client.ControlledClient) error {

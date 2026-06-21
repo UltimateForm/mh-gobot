@@ -271,6 +271,88 @@ func TestParseScorefeedEvent_Team(t *testing.T) {
 	}
 }
 
+func TestParseCustomDmg(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantNil bool
+		wantLen int
+		checks  map[string]float64
+	}{
+		{
+			name:    "two players real newlines",
+			body:    "Custom: [DMG] A37D4B6D00767CA9 | 1020.0\nD1247A0B618D12E | 352.0\n",
+			wantLen: 2,
+			checks:  map[string]float64{"A37D4B6D00767CA9": 1020.0, "D1247A0B618D12E": 352.0},
+		},
+		{
+			name:    "two players escaped newlines",
+			body:    `Custom: [DMG] A37D4B6D00767CA9 | 1020.0\nD1247A0B618D12E | 352.0\n`,
+			wantLen: 2,
+			checks:  map[string]float64{"A37D4B6D00767CA9": 1020.0, "D1247A0B618D12E": 352.0},
+		},
+		{
+			name:    "single player",
+			body:    "Custom: [DMG] A37D4B6D00767CA9 | 500.0\n",
+			wantLen: 1,
+			checks:  map[string]float64{"A37D4B6D00767CA9": 500.0},
+		},
+		{
+			name:    "zero damage entry included",
+			body:    "Custom: [DMG] A37D4B6D00767CA9 | 1020.0\nD1247A0B618D12E | 0.0\n",
+			wantLen: 2,
+			checks:  map[string]float64{"A37D4B6D00767CA9": 1020.0, "D1247A0B618D12E": 0.0},
+		},
+		{
+			name:    "malformed line skipped",
+			body:    "Custom: [DMG] A37D4B6D00767CA9 | 1020.0\nbadline\nD1247A0B618D12E | 352.0\n",
+			wantLen: 2,
+			checks:  map[string]float64{"A37D4B6D00767CA9": 1020.0, "D1247A0B618D12E": 352.0},
+		},
+		{
+			name:    "non-DMG custom event",
+			body:    "Custom: [ADR] A37D4B6D00767CA9 | 102\n",
+			wantNil: true,
+		},
+		{
+			name:    "unrelated custom event",
+			body:    "Custom: A37D4B6D00767CA9|Halberd|D1247A0B618D12E",
+			wantNil: true,
+		},
+		{
+			name:    "not a custom event",
+			body:    "Killfeed: 2026.06.21-16.26.51: A (X) killed B (Y)",
+			wantNil: true,
+		},
+		{
+			name:    "empty body",
+			body:    "",
+			wantNil: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseCustomDmg(tt.body)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("expected nil, got %v", got)
+				}
+				return
+			}
+			if len(got) != tt.wantLen {
+				t.Errorf("len = %d, want %d (got %v)", len(got), tt.wantLen, got)
+			}
+			for id, want := range tt.checks {
+				if v, ok := got[id]; !ok {
+					t.Errorf("missing key %q", id)
+				} else if v != want {
+					t.Errorf("got[%q] = %v, want %v", id, v, want)
+				}
+			}
+		})
+	}
+}
+
 func TestParseMatchstate(t *testing.T) {
 	tests := []struct {
 		raw   string

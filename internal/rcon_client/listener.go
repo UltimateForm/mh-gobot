@@ -20,6 +20,7 @@ const (
 	ListenScorefeed  ListenType = "scorefeed"
 	ListenChat       ListenType = "chat"
 	ListenMatchstate ListenType = "matchstate"
+	ListenCustom     ListenType = "custom"
 	ListenAll        ListenType = "allon"
 )
 
@@ -39,6 +40,7 @@ type ListenerClient struct {
 	ScorefeedPlayerEvents <-chan *parse.ScorefeedPlayerEvent
 	ScorefeedTeamEvents   <-chan *parse.ScorefeedTeamEvent
 	MatchstateEvents      <-chan string
+	CustomDmgEvents       <-chan map[string]float64
 	aliveAcksCh           chan packet.RCONPacket
 	killfeedCh            chan *parse.KillfeedEvent
 	loginCh               chan *parse.LoginEvent
@@ -46,6 +48,7 @@ type ListenerClient struct {
 	scorefeedPlayerCh     chan *parse.ScorefeedPlayerEvent
 	scorefeedTeamCh       chan *parse.ScorefeedTeamEvent
 	matchstateCh          chan string
+	customDmgCh           chan map[string]float64
 	logger                *log.Logger
 }
 
@@ -73,6 +76,7 @@ func NewListener(uri, password string, listenTypes []ListenType) (*ListenerClien
 		scorefeedPlayerCh: make(chan *parse.ScorefeedPlayerEvent, listenerChannelBuffer),
 		scorefeedTeamCh:   make(chan *parse.ScorefeedTeamEvent, listenerChannelBuffer),
 		matchstateCh:      make(chan string, listenerChannelBuffer),
+		customDmgCh:       make(chan map[string]float64, listenerChannelBuffer),
 		logger: log.New(
 			log.Default().Writer(),
 			"[ListenerClient] ",
@@ -86,6 +90,7 @@ func NewListener(uri, password string, listenTypes []ListenType) (*ListenerClien
 	l.ScorefeedPlayerEvents = l.scorefeedPlayerCh
 	l.ScorefeedTeamEvents = l.scorefeedTeamCh
 	l.MatchstateEvents = l.matchstateCh
+	l.CustomDmgEvents = l.customDmgCh
 
 	for _, t := range listenTypes {
 		resp, err := base.Execute("listen " + string(t))
@@ -190,6 +195,16 @@ func (l *ListenerClient) route(body string) {
 		case l.matchstateCh <- state:
 		default:
 			l.logger.Println("matchstateCh full, dropping event")
+		}
+	case strings.HasPrefix(body, "Custom:"):
+		dmg := parse.ParseCustomDmg(body)
+		if dmg == nil {
+			return
+		}
+		select {
+		case l.customDmgCh <- dmg:
+		default:
+			l.logger.Println("customDmgCh full, dropping event")
 		}
 	default:
 		l.logger.Printf("unrouted event: %s", body)

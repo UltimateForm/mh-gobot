@@ -52,6 +52,7 @@ func Start() {
 			rcon_client.ListenKillfeed,
 			rcon_client.ListenScorefeed,
 			rcon_client.ListenMatchstate,
+			rcon_client.ListenCustom,
 		},
 	)
 	if err != nil {

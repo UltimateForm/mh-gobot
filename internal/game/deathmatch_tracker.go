@@ -37,3 +37,6 @@ func (t *DeathmatchTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 
 func (t *DeathmatchTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session, e *parse.ScorefeedTeamEvent) {
 }
+
+func (t *DeathmatchTracker) OnCustomDmg(ctx context.Context, dc *discordgo.Session, dmg map[string]float64) {
+}

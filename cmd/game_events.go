@@ -50,6 +50,15 @@ func matchstateMsg(state string) string {
 	return fmt.Sprintf("🎮 **matchstate** `%s`", state)
 }
 
+func customDmgMsg(dmg map[string]float64) string {
+	var sb strings.Builder
+	sb.WriteString("💥 **[DMG]**")
+	for id, d := range dmg {
+		fmt.Fprintf(&sb, " `%s`:%.0f", id, d)
+	}
+	return sb.String()
+}
+
 func chatMsg(e *parse.ChatEvent) string {
 	msg := strings.Join(strings.Split(e.Message, "\n"), ` \ `)
 	return fmt.Sprintf("💬 **[%s]** `%s` (%s): %s", e.Channel, e.UserName, e.PlayerID, msg)
@@ -74,6 +83,9 @@ func handleEvents(ctx context.Context, dc *discordgo.Session, listener *rcon_cli
 		case e := <-listener.ScorefeedTeamEvents:
 			go logEvent(dc, scorefeedTeamMsg(e))
 			go tracker.OnTeamScore(ctx, dc, e)
+		case dmg := <-listener.CustomDmgEvents:
+			go logEvent(dc, customDmgMsg(dmg))
+			tracker.OnCustomDmg(ctx, dc, dmg)
 		case e := <-listener.KillfeedEvents:
 			if config.Global.Debug {
 				go logEvent(dc, killfeedMsg(e))

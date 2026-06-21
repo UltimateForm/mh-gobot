@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"math"
 	"strings"
 	"sync"
@@ -64,25 +65,27 @@ type quitterRecord struct {
 }
 
 type SkirmishTracker struct {
-	mu                        sync.Mutex
-	state                     skirmishState
-	currentRound              int
-	players                   map[string]*SkirmishPlayer
-	firstKillOfMatchApplied   bool
-	teamScores          map[int]float64
-	roundAliveCounts    map[int]int
-	roundPeakDeficit    map[int]int
-	matchRounds         []SkirmishMatchRound
-	matchStartedAt      time.Time
-	matchMap            string
-	winCap              float64
-	pool                *rcon_client.ConnectionPool
-	eventsChannel       string
-	publicEventsChannel string
-	weightProvider      *ScoreWeightProvider
-	gameConfig          *GameConfig
-	logger              *log.Logger
-	quitters            []quitterRecord
+	mu                      sync.Mutex
+	state                   skirmishState
+	currentRound            int
+	players                 map[string]*SkirmishPlayer
+	firstKillOfMatchApplied bool
+	teamScores              map[int]float64
+	roundAliveCounts        map[int]int
+	roundPeakDeficit        map[int]int
+	matchRounds             []SkirmishMatchRound
+	matchStartedAt          time.Time
+	matchMap                string
+	winCap                  float64
+	pool                    *rcon_client.ConnectionPool
+	eventsChannel           string
+	publicEventsChannel     string
+	weightProvider          *ScoreWeightProvider
+	gameConfig              *GameConfig
+	logger                  *log.Logger
+	quitters                []quitterRecord
+	dmgCh                   chan map[string]float64
+	prevRoundEndDmg         map[string]float64
 }
 
 func NewSkirmishTracker(pool *rcon_client.ConnectionPool, eventsChannel string, publicEventsChannel string, winCap float64, wp *ScoreWeightProvider, gc *GameConfig) *SkirmishTracker {
@@ -102,6 +105,8 @@ func NewSkirmishTracker(pool *rcon_client.ConnectionPool, eventsChannel string, 
 		gameConfig:          gc,
 		logger:              log.New(log.Default().Writer(), "[SkirmishTracker] ", log.Default().Flags()),
 		quitters:            make([]quitterRecord, 0),
+		dmgCh:               make(chan map[string]float64, 1),
+		prevRoundEndDmg:     make(map[string]float64),
 	}
 }
 
@@ -116,6 +121,12 @@ func (t *SkirmishTracker) clearMatch() {
 	t.matchMap = ""
 	t.quitters = make([]quitterRecord, 0)
 	t.firstKillOfMatchApplied = false
+	t.prevRoundEndDmg = make(map[string]float64)
+	select {
+	case <-t.dmgCh:
+		t.logger.Println("clearMatch: drained stale DMG event")
+	default:
+	}
 }
 
 func (t *SkirmishTracker) TeamScores() map[int]int {
@@ -224,19 +235,7 @@ func (t *SkirmishTracker) OnPlayerScore(e *parse.ScorefeedPlayerEvent) {
 	}
 
 	p := t.getOrInitPlayer(e.PlayerID, e.UserName)
-	delta := int(e.ScoreChange)
-	if delta > 0 {
-		weight := ScoreWeight(p.LiveScore, t.weightProvider.AvgScore())
-		delta = int(math.Round(float64(e.ScoreChange) * weight))
-	}
-
-	perf := p.Rounds[t.currentRound]
-	perf.Score += delta
-	p.Rounds[t.currentRound] = perf
-	p.LiveScore += delta
-
 	t.stampIfNeeded(e.PlayerID, p.initialScoreStamped)
-	t.applyScoreDelta(e.PlayerID, delta, "score update")
 }
 
 func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
@@ -256,7 +255,7 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 	if e.IsAssist {
 		baseline = 50.0
 	}
-	
+
 	avgScore := t.weightProvider.AvgScore()
 	kf := KillFactor(victim.LiveScore, killer.LiveScore, math.Max(avgScore, scoreWeightFloor))
 	weight := ScoreWeight(killer.LiveScore, avgScore)
@@ -321,7 +320,11 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	isMatchOver := e.NewScore >= t.winCap
 	winningTeam := e.TeamID
 	roundNum := t.currentRound + 1
+	round := t.currentRound
+	peakDeficit := t.roundPeakDeficit[winningTeam]
 	t.mu.Unlock()
+
+	t.logger.Printf("round %d: team %d scored (%.0f→%.0f), fetching scoreboard...", roundNum, winningTeam, e.OldScore, e.NewScore)
 
 	var scoreboardRaw string
 	err := t.pool.WithClient(ctx, func(client *rcon_client.ControlledClient) error {
@@ -383,9 +386,7 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 
 	// Snapshot match state before modifications
 	teamScoresCopy := make(map[int]float64, len(t.teamScores))
-	for k, v := range t.teamScores {
-		teamScoresCopy[k] = v
-	}
+	maps.Copy(teamScoresCopy, t.teamScores)
 
 	t.teamScores[e.TeamID] = e.NewScore
 
@@ -413,13 +414,53 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 			p.StampInitialScore(s)
 		}
 	}
+	prevDmg := make(map[string]float64, len(t.prevRoundEndDmg))
+	maps.Copy(prevDmg, t.prevRoundEndDmg)
 	t.mu.Unlock()
 
-	avgK := math.Max(t.weightProvider.AvgScore(), scoreWeightFloor)
+	// Wait for [DMG] event pushed by OnCustomDmg — fires after ScorefeedTeam per server ordering
+	t.logger.Printf("round %d: scoreboard ready, waiting for [DMG]...", roundNum)
+	var dmg map[string]float64
+	select {
+	case dmg = <-t.dmgCh:
+		t.logger.Printf("round %d: [DMG] received (%d entries)", roundNum, len(dmg))
+	case <-time.After(5 * time.Second):
+		t.logger.Printf("WARNING round %d: timed out waiting for [DMG], proceeding with zero damage scores", roundNum)
+	case <-ctx.Done():
+		t.logger.Printf("round %d: context cancelled while waiting for [DMG]", roundNum)
+		return
+	}
 
-	// Win bonuses — weight and kf are now applied live in OnPlayerScore/OnKill,
-	// so rd already reflects fairness-adjusted round contribution.
-	peakDeficit := t.roundPeakDeficit[winningTeam]
+	avgScore := t.weightProvider.AvgScore()
+	avgK := math.Max(avgScore, scoreWeightFloor)
+
+	// Apply weighted damage as round score for all scoreboard players
+	for _, entry := range validEntries {
+		roundDmg := dmg[entry.PlayerID] - prevDmg[entry.PlayerID]
+		if roundDmg < 0 {
+			roundDmg = 0
+		}
+		t.mu.Lock()
+		p := t.players[entry.PlayerID]
+		weight := ScoreWeight(p.LiveScore, avgScore)
+		weightedDelta := int(math.Round(roundDmg * weight))
+		perf := p.Rounds[round]
+		perf.Score += weightedDelta
+		p.Rounds[round] = perf
+		p.LiveScore += weightedDelta
+		t.mu.Unlock()
+		if weightedDelta != 0 {
+			t.applyScoreDelta(entry.PlayerID, weightedDelta, "damage score")
+		}
+		t.logger.Printf("round %d: %s (%s) rawDmg=%.0f weight=%.2f delta=%d", roundNum, entry.UserName, entry.PlayerID, roundDmg, weight, weightedDelta)
+	}
+
+	// Update cumulative damage baseline so next round computes deltas correctly
+	t.mu.Lock()
+	maps.Copy(t.prevRoundEndDmg, dmg)
+	t.mu.Unlock()
+
+	// Win bonuses
 	comebackMult := 1.0
 	if peakDeficit > 0 {
 		comebackMult = float64(peakDeficit) * t.gameConfig.Get(CfgComebackBonusFactor)
@@ -429,8 +470,8 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 	for _, entry := range winEntries {
 		t.mu.Lock()
 		p := t.players[entry.PlayerID]
-		rd := float64(p.Rounds[t.currentRound].Score)
-		isSurvivor := p.Rounds[t.currentRound].Deaths == 0
+		rd := float64(p.Rounds[round].Score)
+		isSurvivor := p.Rounds[round].Deaths == 0
 		t.mu.Unlock()
 
 		winMod := t.gameConfig.Get(CfgSkirmishRoundWinMod)
@@ -501,7 +542,6 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 			maxF := t.gameConfig.Get(CfgTeamBalanceMaxFactor)
 			teamBalanceFactor = math.Min(math.Max(avgLose/avgWin, minF), maxF)
 		}
-
 
 		for _, entry := range loseEntries {
 			playerScore := playerScores[entry.PlayerID]
@@ -650,6 +690,16 @@ func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session
 		if isMatchOver {
 			go t.sendMatchEndEmbed(dc, winningTeam, len(winEntries), len(loseEntries), losses, winBonuses, teamScoresCopy, sizeMult, teamBalanceFactor)
 		}
+	}
+}
+
+func (t *SkirmishTracker) OnCustomDmg(ctx context.Context, dc *discordgo.Session, dmg map[string]float64) {
+	t.logger.Printf("[DMG] event: %d player entries", len(dmg))
+	select {
+	case t.dmgCh <- dmg:
+		t.logger.Println("[DMG] queued for OnTeamScore")
+	default:
+		t.logger.Println("WARNING: [DMG] dropped — dmgCh full (no OnTeamScore waiting, or double [DMG]?)")
 	}
 }
 
