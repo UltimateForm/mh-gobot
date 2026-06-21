@@ -152,6 +152,21 @@ func (t *SkirmishTracker) getOrInitPlayer(playerID, username string) *SkirmishPl
 	return p
 }
 
+func (t *SkirmishTracker) recordDeath(victim *SkirmishPlayer) {
+	perf := victim.Rounds[t.currentRound]
+	perf.Deaths++
+	victim.Rounds[t.currentRound] = perf
+	if victim.Team > 0 {
+		t.roundAliveCounts[victim.Team]--
+		for teamID := 1; teamID <= 2; teamID++ {
+			deficit := t.roundAliveCounts[3-teamID] - t.roundAliveCounts[teamID]
+			if deficit > t.roundPeakDeficit[teamID] {
+				t.roundPeakDeficit[teamID] = deficit
+			}
+		}
+	}
+}
+
 func (t *SkirmishTracker) ensureRoundEntry(playerID string, round int) {
 	p := t.getOrInitPlayer(playerID, "")
 	if _, ok := p.Rounds[round]; !ok {
@@ -251,6 +266,13 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 	t.stampIfNeeded(e.KillerID, killer.initialScoreStamped)
 	t.stampIfNeeded(e.KilledID, victim.initialScoreStamped)
 
+	if e.IsTeamkill {
+		t.applyScoreDelta(e.KillerID, -100, "teamkill penalty")
+		killer.LiveScore -= 100
+		t.recordDeath(victim)
+		return
+	}
+
 	baseline := 100.0
 	if e.IsAssist {
 		baseline = 50.0
@@ -287,20 +309,7 @@ func (t *SkirmishTracker) OnKill(e *parse.KillfeedEvent) {
 		}
 	}
 
-	victimPerf := victim.Rounds[t.currentRound]
-	victimPerf.Deaths++
-	victim.Rounds[t.currentRound] = victimPerf
-
-	victimTeam := victim.Team
-	if victimTeam > 0 {
-		t.roundAliveCounts[victimTeam]--
-		for teamID := 1; teamID <= 2; teamID++ {
-			deficit := t.roundAliveCounts[3-teamID] - t.roundAliveCounts[teamID]
-			if deficit > t.roundPeakDeficit[teamID] {
-				t.roundPeakDeficit[teamID] = deficit
-			}
-		}
-	}
+	t.recordDeath(victim)
 }
 
 func (t *SkirmishTracker) OnTeamScore(ctx context.Context, dc *discordgo.Session, e *parse.ScorefeedTeamEvent) {

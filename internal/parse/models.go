@@ -8,6 +8,7 @@ type KillfeedEvent struct {
 	KilledID       string
 	KilledUserName string
 	IsAssist       bool
+	IsTeamkill     bool
 }
 
 type LoginEvent struct {

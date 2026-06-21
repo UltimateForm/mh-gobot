@@ -53,6 +53,35 @@ func TestParseKillfeedEvent_Assist(t *testing.T) {
 	}
 }
 
+func TestParseKillfeedEvent_Teamkill(t *testing.T) {
+	raw := "Killfeed: 2026.03.15-20.32.13: AAAAAAAAAAAAAAAA (TestKiller) teamkilled BBBBBBBBBBBBBBBB (TestKilled)"
+	e, err := ParseKillfeedEvent(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if e == nil {
+		t.Fatal("expected event, got nil")
+	}
+	if e.KillerID != "AAAAAAAAAAAAAAAA" {
+		t.Errorf("KillerID = %q, want %q", e.KillerID, "AAAAAAAAAAAAAAAA")
+	}
+	if e.UserName != "TestKiller" {
+		t.Errorf("UserName = %q, want %q", e.UserName, "TestKiller")
+	}
+	if e.KilledID != "BBBBBBBBBBBBBBBB" {
+		t.Errorf("KilledID = %q, want %q", e.KilledID, "BBBBBBBBBBBBBBBB")
+	}
+	if e.KilledUserName != "TestKilled" {
+		t.Errorf("KilledUserName = %q, want %q", e.KilledUserName, "TestKilled")
+	}
+	if !e.IsTeamkill {
+		t.Error("IsTeamkill = false, want true")
+	}
+	if e.IsAssist {
+		t.Error("IsAssist = true, want false")
+	}
+}
+
 func TestParseKillfeedEvent_Invalid(t *testing.T) {
 	e, err := ParseKillfeedEvent("not a killfeed event")
 	if err != nil {

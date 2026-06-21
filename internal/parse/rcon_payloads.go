@@ -11,10 +11,12 @@ import (
 
 var reScorefeedTeam = regexp.MustCompile(`^Scorefeed: \d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}: Team`)
 var reKillfeedAssist = regexp.MustCompile(`^Killfeed: \d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}: \S+ \(.+\) got an assist`)
+var reKillfeedTeamkill = regexp.MustCompile(`^Killfeed: \d{4}\.\d{2}\.\d{2}-\d{2}\.\d{2}\.\d{2}: \S+ \(.+\) teamkilled`)
 
 const (
-	GrokKillfeedEvent   = `%{WORD:event_type}: %{NOTSPACE:date}: (?:%{NOTSPACE:killer_id})? \(%{GREEDYDATA:user_name}\) killed (?:%{NOTSPACE:killed_id})? \(%{GREEDYDATA:killed_user_name}\)`
-	GrokKillfeedAssist  = `%{WORD:event_type}: %{NOTSPACE:date}: %{NOTSPACE:killer_id} \(%{DATA:user_name}\) got an assist kill for the death of %{NOTSPACE:killed_id} \(%{DATA:killed_user_name}\)`
+	GrokKillfeedEvent    = `%{WORD:event_type}: %{NOTSPACE:date}: (?:%{NOTSPACE:killer_id})? \(%{GREEDYDATA:user_name}\) killed (?:%{NOTSPACE:killed_id})? \(%{GREEDYDATA:killed_user_name}\)`
+	GrokKillfeedAssist   = `%{WORD:event_type}: %{NOTSPACE:date}: %{NOTSPACE:killer_id} \(%{DATA:user_name}\) got an assist kill for the death of %{NOTSPACE:killed_id} \(%{DATA:killed_user_name}\)`
+	GrokKillfeedTeamkill = `%{WORD:event_type}: %{NOTSPACE:date}: %{NOTSPACE:killer_id} \(%{DATA:user_name}\) teamkilled %{NOTSPACE:killed_id} \(%{DATA:killed_user_name}\)`
 	GrokLoginEvent      = `%{WORD:event_type}: %{NOTSPACE:date}: %{GREEDYDATA:user_name} \(%{WORD:player_id}\) logged %{WORD:instance}`
 	DateFormat          = "2006.01.02-15.04.05"
 	GrokChatEvent       = `%{WORD:event_type}: %{NOTSPACE:player_id}, %{GREEDYDATA:user_name}, \(%{WORD:channel}\) %{GREEDYDATA:message}`
@@ -50,9 +52,12 @@ func parseEvent(event, pattern string) (map[string]string, error) {
 
 func ParseKillfeedEvent(event string) (*KillfeedEvent, error) {
 	isAssist := reKillfeedAssist.MatchString(event)
+	isTeamkill := reKillfeedTeamkill.MatchString(event)
 	pattern := GrokKillfeedEvent
 	if isAssist {
 		pattern = GrokKillfeedAssist
+	} else if isTeamkill {
+		pattern = GrokKillfeedTeamkill
 	}
 	values, err := parseEvent(event, pattern)
 	if err != nil || values == nil {
@@ -66,6 +71,7 @@ func ParseKillfeedEvent(event string) (*KillfeedEvent, error) {
 		KilledID:       values["killed_id"],
 		KilledUserName: values["killed_user_name"],
 		IsAssist:       isAssist,
+		IsTeamkill:     isTeamkill,
 	}, nil
 }
 
